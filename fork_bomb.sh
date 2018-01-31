@@ -37,3 +37,4 @@ fork_bomb $@
 
 
 # perl -e "fork while fork" &  --> fork bomb mac
+# %0|%0 --> fork bomb windows
