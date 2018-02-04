@@ -37,4 +37,8 @@ fork_bomb $@
 
 
 # perl -e "fork while fork" &  --> fork bomb mac
-# %0|%0 --> fork bomb windows
+# esegui un bat file con "start %0 | %0" all'interno --> fork bomb windows
+#     oppure esegui un bat file con:
+#        ":runbat
+#         start %0
+#         goto runbat" all'interno
