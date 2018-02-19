@@ -50,25 +50,33 @@ declare -i threads_available=$((threads - threads_online));
 
 # uso
 function usage {
-	printf "\n";
-	printf "`realpath -e $0` [threads to manage] [operations]\n";
-	printf "\n";
-	printf "\tthreads to manage\n";
-	printf "\t\tn :  numero di threads su cui operare (default n=2)\n";
-	printf "\n";
-	printf "\tOperations\n";
-	printf "\t\tn + :  attiva n threads\n";
-	printf "\t\tn - :  disattiva n threads\n";
-	printf "\t\tn / :  disabilita threads_tot/n threads attivi del sistema\n";
-	printf "\t\t  / :  come sopra ma con n=2\n";
-	printf "\t\t // :  porta il sistema al numero di default (n=2) di threads attivi\n"
-	printf "\t\tn ° :  abilita threads_tot*n threads del sistema\n";
-	printf "\t\t  ° :  come sopra ma con n=2\n";
-	printf "\t\t °° :  attiva tutti threads del sistema\n";
-	printf "\n";
-	printf "Esempio: ./`basename $0` + 3 -->  attiva 3 threads del sistema\n";
-	printf "Esempio: ./`basename $0` / 3 -->  se ad esempio il sistema ha 12 threads attivi, ne verranno disattivati 4\n";
+	cat << EOF
+# Utilizzo
 
+	`realpath -e $0` [threads to manage] [operations]
+
+# Threads to manage
+
+	n :  numero di threads su cui operare (default n=2)
+
+# Operations
+
+	n + :  attiva n threads
+	n - :  disattiva n threads
+	n / :  disabilita threads_tot/n threads attivi del sistema
+	  / :  come sopra ma con n=2
+	 // :  porta il sistema al numero di default (n=2) di threads attivi
+	n ° :  abilita threads_tot*n threads del sistema
+	  ° :  come sopra ma con n=2
+	 °° :  attiva tutti threads del sistema
+
+
+# Esempi
+
+	$ ./`basename $0` + 3	# attiva 3 threads del sistema
+	$ ./`basename $0` / 3 	# se ad esempio il sistema ha 12 threads attivi, ne verranno disattivati 4
+
+EOF
 	exit $EXIT_SUCCESS;
 }
 

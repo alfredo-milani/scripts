@@ -36,7 +36,7 @@ fork_bomb() {
 fork_bomb $@
 
 
-# perl -e "fork while fork" &  --> fork bomb mac
+# perl -e "fork while fork" &  --> fork bomb mac; prova con ulimit (per aumentare i valori bisogna essere root)
 # esegui un bat file con "start %0 | %0" all'interno --> fork bomb windows
 #     oppure esegui un bat file con:
 #        ":runbat
