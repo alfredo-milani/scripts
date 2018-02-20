@@ -337,6 +337,7 @@ function fill_header {
     #       -v var --> stampa dentro la variabile var
 
     header=`cat << EOF
+#!$shell
 # ============================================================================
 # Titolo: $title
 # Descrizione: $description
