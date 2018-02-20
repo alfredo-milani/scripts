@@ -94,7 +94,7 @@ if [ ${#pid} != 0 ]; then
 else
     # str="Avvio $tool"
     # zenity --notification --window-icon="$icon_path" --text="$str"
-    $tool -l $lat:$long -t $daytime:$nighttime
+    $tool -l $lat:$long -t $daytime:$nighttime &
 fi
 
 exit $EXIT_SUCCESS
