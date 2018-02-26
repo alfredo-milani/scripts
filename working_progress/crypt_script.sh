@@ -1,6 +1,5 @@
 #!/bin/bash
 # ============================================================================
-
 # Titolo:           crypt_script.sh
 # Descrizione:      Script che esegue comandi criptati che si autoelimina al termine
 # Autore:           Alfredo Milani
@@ -31,7 +30,7 @@ dei1bfsyfTIjqH7TVzv7eE6P7frC6sKnglTpquRap8X0nvtSiRltS4hvAFsWs6CZ
 =sc3i
 -----END PGP MESSAGE-----';
 
-: <<'COMM'
+<<COMM
 chiede automaticamente all'utente di inserire la password ma fallisce se viene
 invocato con sudo o se nel testo criptato c'è un comando che richiede particolari privilegi
 # cmd_decoded="`gpg 2> /dev/null <<< $cmd_encoded`";
