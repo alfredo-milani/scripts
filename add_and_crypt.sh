@@ -146,10 +146,11 @@ function parse_input {
                     printf "${DG}File di configurazione:\n\n${NC}"
                     cat "$structure_file"
                     printf "${DG}Fine file di configurazione.\n\n${NC}"
+                    exit $EXIT_SUCCESS
                 else
                     printf "${R}File per la configurazione della gerarchia di directory non presente.\nUtilizzare il flag -h per ottenere informazioni su come impostarlo\n${NC}"
+                    exit $EXIT_FAILURE
                 fi
-                shift
                 ;;
 
             -[hH] | --[hH] | -help | -HELP | --help | --HELP )
