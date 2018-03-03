@@ -49,10 +49,12 @@ declare -r script_name=`basename "$0"`
 declare -r dir_conf="/home/$USER/.config/${script_name%.*}"
 declare -r config_file="$dir_conf/asset"
 declare show_dirs=false
+declare only_tmp=false
 
 declare -A structure=()
 declare -A key_of_command=()
-declare tmp="/dev/shm"
+declare tmp_base="/dev/shm"
+declare tmp_dir=""
 declare structure_file=""
 declare crypted_file=""
 declare decrypted_file=""
@@ -119,6 +121,7 @@ function usage {
 `printf "${BD}# Argomenti${NC}"`
 
     -arg | -ARG :   mostra gli argomenti contenuti nel file di configurazione
+    -only-tmp | -ONLY-TMP : salva il file ottenuto nella directory temporanea
     -h | -H     :   visualizza questo aiuto
     -sd | -SD   :   mostra le directory utilizzate
     -structure | -STRUCTURE     :   specifica un file per configurare la gerarchia di directory dell'archivio compresso
@@ -166,6 +169,11 @@ function parse_input {
                 usage
                 ;;
 
+            -only-tmp | -ONLY-TMP)
+                only_tmp=true
+                shift
+                ;;
+
             -sd | -SD )
                 show_dirs=true
                 shift
@@ -188,8 +196,8 @@ function parse_input {
             -tmp | -TMP )
                 shift
                 # specifica directory dei files temporanei
-                [ -d "$1" ] && tmp="`realpath "$1"`" ||
-                printf "${Y}Directory: $1 non esistente; verrà usata quella di default ($tmp)\n${NC}"
+                [ -d "$1" ] && tmp_base="`realpath "$1"`" ||
+                printf "${Y}Directory: $1 non esistente; verrà usata quella di default ($tmp_base)\n${NC}"
                 shift
                 ;;
 
@@ -230,23 +238,25 @@ function check_file {
 
     if [ ${#1} -eq 0 ]; then
         printf "${R}Non è stato specificato alcun file.\n${NC}"
+        on_exit
         exit $EXIT_FAILURE
     elif [ -f "$1" ]; then
         crypted_file="`realpath "$1"`"
     else
         printf "${R}Il file \'$1\' non esiste\n${NC}"
+        on_exit
         exit $EXIT_FAILURE
     fi
 }
 
 function create_tmp_env {
     # creazione directory temporanea
-    tmp=`mktemp -d -p "$tmp"`
-    cd "$tmp"
+    tmp_dir=`mktemp -d -p "$tmp_base"`
+    cd "$tmp_dir"
 }
 
 function remove_tmp {
-    rm -rf "$tmp"
+    rm -rf "$tmp_dir"
 }
 
 function on_exit {
@@ -255,7 +265,7 @@ function on_exit {
 
 function decrypt_file {
     # decripta
-    cp "$crypted_file" "$tmp"
+    cp "$crypted_file" "$tmp_dir"
     gpg "`basename "$crypted_file"`" &> $NULL
     [ $? != 0 ] &&
     printf "${R}Errore durante la decodifica.\n${NC}" &&
@@ -274,40 +284,40 @@ function decompress_file {
     ext="${decrypted_file##*.}"
     case "$ext" in
         tar )
-            tar -xf "$decrypted_file" -C "$tmp" &> $NULL
+            tar -xf "$decrypted_file" -C "$tmp_dir" &> $NULL
             decompressed_file="${decrypted_file%.*}"
             ;;
 
         xz )
-            tar -xvf "$decrypted_file" -C "$tmp" &> $NULL
+            tar -xvf "$decrypted_file" -C "$tmp_dir" &> $NULL
             decompressed_file="${decrypted_file%.*}"
             decompressed_file="${decompressed_file%.*}"
             ;;
 
         gz )
-            tar -zxvf "$decrypted_file" -C "$tmp" &> $NULL
+            tar -zxvf "$decrypted_file" -C "$tmp_dir" &> $NULL
             decompressed_file="${decrypted_file%.*}"
             decompressed_file="${decompressed_file%.*}"
             ;;
 
         bz2 )
-            tar -jxvf "$decrypted_file" -C "$tmp" &> $NULL
+            tar -jxvf "$decrypted_file" -C "$tmp_dir" &> $NULL
             decompressed_file="${decrypted_file%.*}"
             decompressed_file="${decompressed_file%.*}"
             ;;
 
         zip )
-            unzip "$decrypted_file" -d "$tmp" &> $NULL
+            unzip "$decrypted_file" -d "$tmp_dir" &> $NULL
             decompressed_file="${decrypted_file%.*}"
             ;;
 
         7z )
-            7z x "$decrypted_file" -o"$tmp" &> $NULL
+            7z x "$decrypted_file" -o"$tmp_dir" &> $NULL
             decompressed_file="${decrypted_file%.*}"
             ;;
 
         * )
-                printf "${R}Formato sconosciuto: \'$tmp\'. Estrazione non riuscita.\n${NC}"
+                printf "${R}Formato sconosciuto: \'$ext\'. Estrazione non riuscita.\n${NC}"
                 return $EXIT_FAILURE
     esac
 }
@@ -328,7 +338,7 @@ function compress_file {
         7z )    7z a "$decrypted_file" "$decompressed_file" &> $NULL ;;
 
         * )
-            printf "${R}Formato sconosciuto: \'$tmp\'. Estrazione non riuscita.\n${NC}"
+            printf "${R}Formato sconosciuto: \'$ext\'. Estrazione non riuscita.\n${NC}"
             return $EXIT_FAILURE
     esac
 }
@@ -348,16 +358,19 @@ function add_new_file {
 }
 
 function save_file_main_dir {
-    base_dir="${crypted_file%/*}"
-    cp -r "$decompressed_file" "$base_dir/$decompressed_file"
-    # rm "$crypted_file"
+    if [ "$only_tmp" == true ]; then
+        cp -r "$decompressed_file" "$tmp_base"
+    else
+        cp -r "$decompressed_file" "${crypted_file%/*}"
+        # rm "$crypted_file"
+    fi
 }
 
 function print_dirs {
     printf "${BD}Posizioni:\n${NC}"
 
     cat <<EOF
-    -Directory per file temporanei  : '${tmp:-$null_str}'
+    -Directory per file temporanei  : '${tmp_dir:-$null_str}'
     -File criptato                  : '${crypted_file:-$null_str}'
     -File struttura                 : '${structure_file:-$null_str}'
 EOF
@@ -387,11 +400,11 @@ EOF
 }
 
 
+manage_signal
 check_asset
 read_structure
 
-n_args=$#
-if [ $n_args -gt 1 ]; then
+if [ $# -gt 1 ]; then
     parse_input "$@"
     validate_new_files
 else
@@ -401,13 +414,12 @@ fi
 check_file "$crypted_file"
 
 create_tmp_env
-manage_signal
 print_vars
 
 decrypt_file
 decompress_file
 
-if [ $n_args -gt 1 ]; then
+if [ ${#key_of_command[@]} -gt 0 ]; then
     add_new_file
 
     compress_file
