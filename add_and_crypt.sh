@@ -39,6 +39,7 @@ declare -r G='\033[0;32m' # green
 declare -r DG='\033[1;30m' # dark gray
 declare -r U='\033[4m' # underlined
 declare -r NC='\033[0m' # No Color
+declare -r BD='\e[1m' # Bold
 
 declare -r EXIT_SUCCESS=0
 declare -r EXIT_FAILURE=1
@@ -47,6 +48,7 @@ declare -r NULL="/dev/null"
 declare -r script_name=`basename "$0"`
 declare -r dir_conf="/home/$USER/.config/${script_name%.*}"
 declare -r config_file="$dir_conf/asset"
+declare show_dirs=false
 
 declare -A structure=()
 declare -A key_of_command=()
@@ -58,7 +60,7 @@ declare decompressed_file=""
 declare ext=""
 
 
-function manage_sigal {
+function manage_signal {
     trap "on_exit" SIGINT SIGKILL SIGTERM SIGUSR1 SIGUSR2
 }
 
@@ -90,31 +92,42 @@ function read_structure {
 
 function validate_new_files {
     for el in ${!key_of_command[@]}; do
-        # TODO aggiungi supporto per aggiungere tutti i file appartenenti ad una directory
-        ! [ -f "${key_of_command["$el"]}" ] &&
-        printf "${Y}Attenzione! Il file \'${key_of_command["$el"]}\' sarà ignorato perché non esistente.\n${NC}" &&
-        unset key_of_command["$el"]
+        key="$el"
+        value="${key_of_command["$key"]}"
+        if ! [ -f "$value" ] &&
+        ! [ -d "$value" ]; then
+            printf "${Y}Attenzione! Il file \'$value\' sarà ignorato perché non esistente.\n${NC}"
+            unset key_of_command["$key"]
+        else
+            key_of_command+=(["$key"]="`realpath "$value"`")
+        fi
     done
 }
 
 function usage {
     cat <<EOF
 
-    # Sintassi
+`printf "${BD}# Sintassi${NC}"`
 
-        ./`basename "$0"` -[args] FILE
+    ./`basename "$0"` -[args] FILE
 
-    # Descrizione
+`printf "${BD}# Descrizione${NC}"`
 
-        `basename "$0"` è un tool che serve per aggiornare un archivio compresso specificato da FILE.
+    `basename "$0"` è un tool che serve per aggiornare un archivio compresso specificato da FILE.
+    Se verrà passato solo FILE come argomento allora verrà decriptato ed estratto.
 
-    # Argomenti
+`printf "${BD}# Argomenti${NC}"`
 
-        -arg | -ARG :   mostra gli argomenti contenuti nel file di configurazione
-        -h | -H     :   visualizza questo aiuto
-        -structure | -STRUCTURE     :   specifica un file per configurare la gerarchia di directory dell'archivio compresso
-        -tmp | -TMP     :   specifica directory per files temporanei
-        -val | -VAL     :   mostra flags disponibili per accedere alla directory del file compresso e i corrispondenti valori
+    -arg | -ARG :   mostra gli argomenti contenuti nel file di configurazione
+    -h | -H     :   visualizza questo aiuto
+    -sd | -SD   :   mostra le directory utilizzate
+    -structure | -STRUCTURE     :   specifica un file per configurare la gerarchia di directory dell'archivio compresso
+    -tmp | -TMP     :   specifica directory per files temporanei
+    -val | -VAL     :   mostra flags disponibili per accedere alla directory del file compresso e i corrispondenti valori
+
+`printf "${BD}# File di configurazione${NC}"`
+
+    Il file di configurazione è un tipo di file key-value del tipo: -parametro-da-specificare=path/relativo/archivio/compresso
 
 EOF
 
@@ -133,28 +146,29 @@ function get_operation_on_archive {
 }
 
 function parse_input {
-    if [ $# -eq 0 ]; then
-        printf "${R}Devi specificare almento un'opzione\n${NC}"
-        usage
-    fi
-
     while [ $# -gt 0 ]; do
         case "$1" in
             -arg | -ARG )
                 # mostra file configurazione
                 if [ -f "$structure_file" ]; then
-                    printf "${DG}File di configurazione:\n\n${NC}"
+                    printf "${BD}Inizio file di configurazione locato in \'$structure_file\':\n${NC}"
                     cat "$structure_file"
-                    printf "${DG}Fine file di configurazione.\n\n${NC}"
+                    printf "${BD}Fine file di configurazione.\n\n${NC}"
                     exit $EXIT_SUCCESS
                 else
                     printf "${R}File per la configurazione della gerarchia di directory non presente.\nUtilizzare il flag -h per ottenere informazioni su come impostarlo\n${NC}"
+                    on_exit
                     exit $EXIT_FAILURE
                 fi
                 ;;
 
             -[hH] | --[hH] | -help | -HELP | --help | --HELP )
                 usage
+                ;;
+
+            -sd | -SD )
+                show_dirs=true
+                shift
                 ;;
 
             -structure | -STRUCTURE )
@@ -165,6 +179,7 @@ function parse_input {
                     sed -i "s:^structure_file=.*:structure_file=$structure_file:g" "$config_file"
                 else
                     printf "${Y}File: $1 non esistente; è necessario specificare un file per configurare la gerarchia di directory dell'archivio compresso\n${NC}"
+                    on_exit
                     exit $EXIT_FAILURE
                 fi
                 shift
@@ -179,10 +194,10 @@ function parse_input {
                 ;;
 
             -val | -VAL )
-                printf "${DG}\nValori contenuti nel file di configurazione:\n${NC}"
+                printf "${BD}\nValori contenuti nel file di configurazione:\n${NC}"
                 i=1
                 for el in ${!structure[@]}; do
-                    printf "${DG}${i}.${NC} $el\t${DG}-->${NC}\t${structure["$el"]}\n"
+                    printf "${BD}${i}.${NC} $el\t${BD}-->${NC}\t${structure["$el"]}\n"
                     i=$((++i))
                 done
                 exit $EXIT_SUCCESS
@@ -199,17 +214,29 @@ function parse_input {
                     printf "Uscita.\n" &&
                     exit $EXIT_SUCCESS
                 else
-                    if [ -f "$1" ]; then
-                        crypted_file="`realpath "$1"`"
-                    else
-                        printf "${R}Il file \'$1\' non esiste\n${NC}"
-                        exit $EXIT_FAILURE
-                    fi
+                    check_file "$1"
                 fi
                 shift
                 ;;
         esac
     done
+}
+
+function check_file {
+    if [ $# -eq 0 ]; then
+        printf "${R}Devi specificare almento un'opzione\n${NC}"
+        usage
+    fi
+
+    if [ ${#1} -eq 0 ]; then
+        printf "${R}Non è stato specificato alcun file.\n${NC}"
+        exit $EXIT_FAILURE
+    elif [ -f "$1" ]; then
+        crypted_file="`realpath "$1"`"
+    else
+        printf "${R}Il file \'$1\' non esiste\n${NC}"
+        exit $EXIT_FAILURE
+    fi
 }
 
 function create_tmp_env {
@@ -232,6 +259,7 @@ function decrypt_file {
     gpg "`basename "$crypted_file"`" &> $NULL
     [ $? != 0 ] &&
     printf "${R}Errore durante la decodifica.\n${NC}" &&
+    on_exit &&
     exit $EXIT_FAILURE
     tmp_crypted_file="`basename "$crypted_file"`"
     decrypted_file="${tmp_crypted_file%.*}"
@@ -309,26 +337,51 @@ function add_new_file {
     cd "$decompressed_file"
 
     for el in ${!key_of_command[@]}; do
-        cp "${key_of_command["$el"]}" "./${structure["$el"]}"
+        if [ -d "${key_of_command["$el"]}" ]; then
+            cp "${key_of_command["$el"]}"/* "./${structure["$el"]}"
+        else
+            cp "${key_of_command["$el"]}" "./${structure["$el"]}"
+        fi
     done
 
     cd ..
 }
 
-function print_vars {
-    cat <<EOF
+function save_file_main_dir {
+    base_dir="${crypted_file%/*}"
+    cp -r "$decompressed_file" "$base_dir/$decompressed_file"
+    # rm "$crypted_file"
+}
 
-Posizioni:
+function print_dirs {
+    printf "${BD}Posizioni:\n${NC}"
+
+    cat <<EOF
     -Directory per file temporanei  : '${tmp:-$null_str}'
     -File criptato                  : '${crypted_file:-$null_str}'
     -File struttura                 : '${structure_file:-$null_str}'
+EOF
+}
 
-Files da aggiungere all'archivio:
-`i=1
-for el in ${!key_of_command[@]}; do
-    printf "\t${i}. $el\t-->\t${structure["$el"]}\n"
-    i=$((++i))
-done`
+function print_commands {
+    printf "${BD}Files da aggiungere all'archivio:\n${NC}"
+
+    if [ ${#key_of_command[@]} -eq 0 ]; then
+        printf "\t${U}Nessun file da aggiungere. Il file verrà decriptato e decompresso.${NC}\n"
+    else
+        i=1
+        for el in ${!key_of_command[@]}; do
+            printf "\t${BD}${i}.${NC} $el\t${BD}-->${NC}\t${structure["$el"]}\n"
+            i=$((++i))
+        done
+    fi
+}
+
+function print_vars {
+    cat <<EOF
+`[ "$show_dirs" == true ] && print_dirs`
+
+`print_commands`
 
 EOF
 }
@@ -337,19 +390,31 @@ EOF
 check_asset
 read_structure
 
-parse_input "$@"
-validate_new_files
+n_args=$#
+if [ $n_args -gt 1 ]; then
+    parse_input "$@"
+    validate_new_files
+else
+    check_file "$@"
+fi
+
+check_file "$crypted_file"
+
 create_tmp_env
-manage_sigal
+manage_signal
 print_vars
 
 decrypt_file
 decompress_file
 
-add_new_file
+if [ $n_args -gt 1 ]; then
+    add_new_file
 
-compress_file
-crypt_file
+    compress_file
+    crypt_file
+else
+    save_file_main_dir
+fi
 
 on_exit
 
