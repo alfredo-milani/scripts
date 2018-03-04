@@ -50,7 +50,7 @@ declare -i threads_available=$((threads - threads_online));
 
 # uso
 function usage {
-	cat << EOF
+	cat <<EOF
 # Utilizzo
 
 	`realpath -e $0` [threads to manage] [operations]
