@@ -70,29 +70,44 @@ function manage_signal {
 }
 
 function get_asset {
-    while IFS='=' read -r key value; do
-        case "$key" in
-            structure_file )  structure_file="$value" ;;
-        esac
-    done <<< `sed -e 's/[[:space:]]*#.*// ; /^[[:space:]]*$/d' "$config_file"`
+    if [ -f "$config_file" ]; then
+        while IFS='=' read -r key value; do
+            case "$key" in
+                structure_file )  structure_file="$value" ;;
+            esac
+        done <<< `sed -e 's/[[:space:]]*#.*// ; /^[[:space:]]*$/d' "$config_file"`
+    else
+        printf "${R}Attenzione il file utilizzato per l'inizializzazione non è stato trovato! (PATH: $config_file)\n${NC}"
+        on_exit
+        exit $EXIT_FAILURE
+    fi
 }
 
 function check_asset {
     if ! [ -f "$config_file" ]; then
         # Primo avvio
+        mkdir -p "$dir_conf"
         cat <<EOF > "$config_file"
 [gerarchia directory]
 structure_file=
 EOF
+
+        printf "${G}${U}Inizializzazione interna completata.\n${NC}"
     else
         get_asset
     fi
 }
 
 function load_structure {
-    while IFS='=' read -r key value; do
-        structure+=(["$key"]="$value")
-    done <<< `sed -e 's/[[:space:]]*#.*// ; /^[[:space:]]*$/d' "$structure_file"`
+    if [ -f "$structure_file" ]; then
+        while IFS='=' read -r key value; do
+            structure+=(["$key"]="$value")
+        done <<< `sed -e 's/[[:space:]]*#.*// ; /^[[:space:]]*$/d' "$structure_file"`
+    else
+        printf "${R}Bisogna specificare un file per inizializzare la struttura dell'archivio compresso!\nUtilizzare il flag -h per maggiori informazioni\n${NC}"
+        on_exit
+        exit $EXIT_FAILURE
+    fi
 }
 
 function validate_new_files {
@@ -209,6 +224,8 @@ function parse_input {
                     # specifica file per configurare la gerarchia di directory all'interno dell'archivio compresso
                     structure_file="`realpath "$1"`"
                     sed -i "s:^structure_file=.*:structure_file=$structure_file:g" "$config_file"
+                    printf "${G}Il file $structure_file è stato impostato correttamente come file per ottenere la struttura dell'archivio compresso.\nOra è possibile utilizzare i flags specificati in questo file per operare sull'archivio compresso\n${NC}"
+                    exit $EXIT_SUCCESS
                 else
                     printf "${Y}File: $1 non esistente; è necessario specificare un file per configurare la gerarchia di directory dell'archivio compresso\n${NC}"
                     on_exit
@@ -226,6 +243,7 @@ function parse_input {
                 ;;
 
             -val | -VAL )
+                [ "${#structure[@]}" -eq 0 ] && load_structure
                 printf "${BD}\nValori contenuti nel file di configurazione:\n${NC}"
                 i=1
                 for el in ${!structure[@]}; do
@@ -236,6 +254,7 @@ function parse_input {
                 ;;
 
             * )
+                [ "${#structure[@]}" -eq 0 ] && load_structure
                 get_operation_on_archive "$1" "$2" && shift && shift && continue
 
                 if [ ${#crypted_file} != 0 ]; then
@@ -435,12 +454,10 @@ EOF
 function main {
     manage_signal
     check_asset
-    load_structure
-
     parse_input "$@"
-    if [ $# -gt 1 ]; then
-        validate_new_files
-    fi
+    [ "${#structure[@]}" -eq 0 ] && load_structure
+
+    [ $# -gt 1 ] && validate_new_files
 
     check_file "$crypted_file"
 
