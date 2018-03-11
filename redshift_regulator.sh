@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# Titolo:           redshift_regolator.sh
+# Titolo:           redshift_regulator.sh
 # Descrizione:      Regola la temperatura del colore (in gradi K) dello schermo
 # Autore:           Alfredo Milani  (alfredo.milani.94@gmail.com)
 # Data:             dom 23 lug 2017, 00.19.22, CEST
