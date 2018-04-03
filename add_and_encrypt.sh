@@ -43,12 +43,9 @@ declare show_dirs=false
 declare only_tmp=false
 declare same_psw=false
 
-# flag -A non saupportato in bash 3.x
-# TODO vedere se funziona comunque
-# declare -A structure=()
-# declare -A key_of_command=()
-declare structure=()
-declare key_of_command=()
+# NOTA: declare, flag -A non saupportato in bash 3.x
+declare -A structure=()
+declare -A key_of_command=()
 declare tmp_base="/dev/shm"
 declare tmp_dir=""
 declare structure_file=""
