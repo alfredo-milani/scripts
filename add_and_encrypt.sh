@@ -44,8 +44,8 @@ declare only_tmp=false
 declare same_psw=false
 
 # NOTA: declare, flag -A non saupportato in bash version <= 3.x
-declare -a structure=()
-declare -a key_of_command=()
+declare -A structure=()
+declare -A key_of_command=()
 declare tmp_base="/dev/shm"
 declare tmp_dir=""
 declare structure_file=""
@@ -444,6 +444,7 @@ function print_vars {
 EOF
 }
 
+# NOTA: in MacOS non c'è il tool realpath
 function custom_realpath {
     [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
 }
