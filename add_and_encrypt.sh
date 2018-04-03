@@ -14,19 +14,10 @@
 
 ##### ##################################
 ##### Inizio controllo preliminare #####
-# $$ --> indica il pid del processo corrente
-# il file /proc/pid/cmdline contiene la riga di comando con la quale è stato lanciato il processo identificato da pid.
-# cut -c 1-4 restituisce i primi 4 caratteri della stringa presa in input
-line_acc1="bash"; line_acc2="/bin/bash"
-cmd_line=`cat /proc/$$/cmdline | tr '\0' ' '`
-# verifica se tra i primi caratteri della riga di comando c'è la stringa "bash"
-cmd_acc=`echo $cmd_line | cut -c 1-${#line_acc1}`
-if [ "$line_acc1" != "$cmd_acc" ]; then
-    cmd_acc=`echo $cmd_line | cut -c 1-${#line_acc2}`
-    if [ "$line_acc2" != "$cmd_acc" ]; then
-        printf "\nLo script corrente deve essere eseguito da una shell bash e NON sh!\n"
-        exit 1
-    fi
+bash_shell="/bin/bash"
+if [ "$bash_shell" != "$SHELL" ]; then
+    printf "\nLo script corrente deve essere eseguito da una shell bash e NON sh!\n"
+    exit 1
 fi
 ##### Fine controllo preliminare #####
 ######################################
@@ -46,14 +37,18 @@ declare -r EXIT_FAILURE=1
 declare -r null_str="--/--"
 declare -r NULL="/dev/null"
 declare -r script_name=`basename "$0"`
-declare -r dir_conf="/home/$USER/.config/${script_name%.*}"
+declare -r dir_conf="$HOME/.config/${script_name%.*}"
 declare -r config_file="$dir_conf/asset"
 declare show_dirs=false
 declare only_tmp=false
 declare same_psw=false
 
-declare -A structure=()
-declare -A key_of_command=()
+# flag -A non saupportato in bash 3.x
+# TODO vedere se funziona comunque
+# declare -A structure=()
+# declare -A key_of_command=()
+declare structure=()
+declare key_of_command=()
 declare tmp_base="/dev/shm"
 declare tmp_dir=""
 declare structure_file=""
@@ -133,7 +128,7 @@ function usage {
 
 `printf "${BD}# Descrizione${NC}"`
 
-    `basename "$0"` è un tool che serve per aggiornare un archivio compresso specificato da FILE.
+    `basename "$0"` è un tool che serve per aggiornare un archivio criptato compresso specificato da FILE.
     Se verrà passato solo FILE come argomento allora verrà decriptato ed estratto.
 
 `printf "${BD}# Argomenti${NC}"`

@@ -87,7 +87,7 @@ function print_str {
 	if [ "$1" == "0" ]; then
 		printf "$reason" 1>&2;
 
-		[ $zen == 0 ] &&
+		[ "$zen" == 0 ] &&
 		zenity --width=$dialog_width --height=$dialog_height --error --text="$reason" &> $null;
 
 		return $EXIT_FAILURE;
@@ -99,7 +99,7 @@ function print_str {
 # alert dialog con richiesta interazione utente
 function decision {
 	question="\t\t $1 \n";
-	if [ $zen == 0 ]; then
+	if [ "$zen" == 0 ]; then
 		zenity --width=$dialog_width --height=$dialog_height --question --timeout $read_to --text="$question" &> $null &&
 		return $EXIT_SUCCESS;
 		return $EXIT_FAILURE;
@@ -126,7 +126,7 @@ function get_op {
 function enable_threads {
 	get_op;
 	operation=$?;
-	[ $operation == -1 ] && return $EXIT_FAILURE;
+	[ "$operation" == -1 ] && return $EXIT_FAILURE;
 
 	# l'indice parte da 1 perché la cpu0 non può essere
 	# disabilitata per problemi di stabilità e sicurezza
@@ -138,10 +138,10 @@ function enable_threads {
 		return $EXIT_FAILURE;
 
 		cpu_status=`cat $status_file`;
-		if [ $cpu_status == 0 ]; then
+		if [ "$cpu_status" == 0 ]; then
 			(echo $operation > $status_file) &> $null;
 
-			[ $? != 0 ] &&
+			[ "$?" != 0 ] &&
 			! print_str 0 "Permessi non sufficienti per eseguire lo script" &&
 			return $EXIT_FAILURE;
 
@@ -155,7 +155,7 @@ function enable_threads {
 function disable_threads {
 	get_op;
 	operation=$?;
-	[ $operation == -1 ] && return $EXIT_FAILURE;
+	[ "$operation" == -1 ] && return $EXIT_FAILURE;
 
 	# l'indice parte da 1 perché la cpu0 non può essere
 	# disabilitata per problemi di stabilità e sicurezza
@@ -167,10 +167,10 @@ function disable_threads {
 		return $EXIT_FAILURE;
 
 		cpu_status=`cat $status_file`;
-		if [ $cpu_status == 1 ]; then
+		if [ "$cpu_status" == 1 ]; then
 			(echo $operation > $status_file) &> $null;
 
-			[ $? != 0 ] &&
+			[ "$?" != 0 ] &&
 			! print_str 0 "Permessi non sufficienti per eseguire lo script" &&
 			return $EXIT_FAILURE;
 
@@ -184,19 +184,19 @@ function disable_threads {
 
 # controllo presenza tools necessari per l'operazione
 which egrep nproc 1> $null;
-[ $? != 0 ] && ! print_str 0 "Tool egrep o nproc non presenti nel sistema" && exit $EXIT_FAILURE;
+[ "$?" != 0 ] && ! print_str 0 "Tool egrep o nproc non presenti nel sistema" && exit $EXIT_FAILURE;
 which zenity 1> $null;
 zen=$?;
 # verifica numero argomenti ricevuti
 (
-([ $# -gt 2 ] && ! print_str 0 "Troppi argomenti ricevuti!") ||
-([ $# -lt 1 ] && ! print_str 0 "Argomenti mancanti!")
+([ "$#" -gt 2 ] && ! print_str 0 "Troppi argomenti ricevuti!") ||
+([ "$#" -lt 1 ] && ! print_str 0 "Argomenti mancanti!")
 ) && usage;
 
 
 
 # parsing input utente
-while [ $# -gt 0 ]; do
+while [ "$#" -gt 0 ]; do
 	case "$1" in
 		'+' | '°' | '°°' ) [ "$OP" == "?" ] && OP=$1 && shift && continue ;;
 
@@ -217,7 +217,7 @@ done
 case "$OP" in
 	'+' )
 		# controllo sul numero di threads da gestire
-		[ $threads_to_manage -gt $threads_available ] &&
+		[ "$threads_to_manage" -gt "$threads_available" ] &&
 		! print_str 0 "Errore! Non è possibile attivare più di $threads_available threads." &&
 		exit $EXIT_FAILURE;
 
@@ -227,7 +227,7 @@ case "$OP" in
 	'°' )
 		# controllo sul numero di threads da gestire
 		threads_to_manage=$((threads_online * threads_to_manage));
-		[ $threads_to_manage -gt $threads_available ] &&
+		[ "$threads_to_manage" -gt "$threads_available" ] &&
 		! print_str 0 "Errore! Non è possibile attivare più di $threads_available threads." &&
 		exit $EXIT_FAILURE;
 
@@ -243,12 +243,12 @@ case "$OP" in
 
 	'-' )
 		# controllo sul numero di threads da gestire
-		[ $threads_to_manage -ge $threads_online ] &&
+		[ "$threads_to_manage" -ge "$threads_online" ] &&
 		! print_str 0 "Errore! Non è possibile disattivare più di $threads_online threads." &&
 		exit $EXIT_FAILURE;
 
 		# verifica che ci sia un numero sufficiente di threads da poter gestire
-		if [ $((threads_online - threads_to_manage)) -lt 2 ]; then
+		if [ "$((threads_online - threads_to_manage))" -lt 2 ]; then
 			decision "Attenzione: numero di threads online=$threads_online;
 			            numero di threads da disattivare=$threads_to_manage.\n\t\t Procedere comunque?" ||
 			exit $EXIT_FAILURE;
@@ -261,13 +261,13 @@ case "$OP" in
 	'/' )
 		# controllo sul numero di threads da gestire
 		threads_to_manage=$((threads_online / threads_to_manage));
-		[ $threads_to_manage -ge $threads_online ] &&
+		[ "$threads_to_manage" -ge "$threads_online" ] &&
 		! print_str 0 "Errore! Non è possibile disattivare più di $threads_online threads." &&
 		exit $EXIT_FAILURE;
 
 		# verifica che ci sia un numero sufficiente di threads da poter gestire
 		threads_to_use=$((threads_online - threads_to_manage));
-		if [ $threads_to_use -ge 0 ] && [ $threads_to_use -lt 2 ]; then
+		if [ "$threads_to_use" -ge 0 ] && [ "$threads_to_use" -lt 2 ]; then
 			decision "Attenzione: numero di threads online=$threads_online;
 			            numero di threads da disattivare=$threads_to_manage.\n\t\t Procedere comunque?" ||
 			exit $EXIT_FAILURE;
@@ -281,7 +281,7 @@ case "$OP" in
 		threads_to_manage=$((threads_online - threads_default));
 
 		# verifica che ci sia un numero sufficiente di threads da poter gestire
-		if [ $threads_to_manage -lt 0 ]; then
+		if [ "$threads_to_manage" -lt 0 ]; then
 			if decision "Attenzione: numero di threads online=$threads_online.\n\t\t Vuoi portare il numero di threads attivi a $threads_default?"; then
 				threads_to_manage=1; OP='+';
 				enable_threads && exit $EXIT_SUCCESS ||
