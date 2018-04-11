@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# Titolo: add_and_encrypt.sh
+# Titolo: add_and_encrypt_linux.sh
 # Descrizione: Decripta, estrae, agginge e cripta il file specificato
 # Autore: alfredo
 # Data: mer 21 feb 2018, 19.24.21, CET
@@ -111,7 +111,7 @@ function validate_new_files {
             printf "${Y}Attenzione! Il file \'$value\' sarà ignorato perché non esistente.\n${NC}"
             unset key_of_command["$key"]
         else
-            key_of_command+=(["$key"]="`custom_realpath "$value"`")
+            key_of_command+=(["$key"]="`realpath "$value"`")
         fi
     done
 }
@@ -214,9 +214,8 @@ function parse_input {
                 shift
                 if [ -f "$1" ]; then
                     # specifica file per configurare la gerarchia di directory all'interno dell'archivio compresso
-                    structure_file="`custom_realpath "$1"`"
-                    # TODO: on MacOS sed -i flags ritorna un errore
-                    sed -i "s:^structure_file=.*:structure_file=$structure_file:g" "$config_file"
+                    structure_file="`realpath "$1"`"
+                    sed -i "s:structure_file=.*:structure_file=$structure_file:g" "$config_file"
                     printf "${G}Il file $structure_file è stato impostato correttamente come file per ottenere la struttura dell'archivio compresso.\nOra è possibile utilizzare i flags specificati in questo file per operare sull'archivio compresso\n${NC}"
                     exit $EXIT_SUCCESS
                 else
@@ -230,7 +229,7 @@ function parse_input {
             -tmp | -TMP )
                 shift
                 # specifica directory dei files temporanei
-                [ -d "$1" ] && tmp_base="`custom_realpath "$1"`" ||
+                [ -d "$1" ] && tmp_base="`realpath "$1"`" ||
                 printf "${Y}Directory: $1 non esistente; verrà usata quella di default ($tmp_base)\n${NC}"
                 shift
                 ;;
@@ -273,7 +272,7 @@ function check_file {
         on_exit
         exit $EXIT_FAILURE
     elif [ -f "$1" ]; then
-        crypted_file="`custom_realpath "$1"`"
+        crypted_file="`realpath "$1"`"
     else
         printf "${R}Il file \'$1\' non esiste.\n${NC}"
         on_exit
@@ -442,11 +441,6 @@ function print_vars {
 `print_commands`
 
 EOF
-}
-
-# NOTA: in MacOS non c'è il tool realpath
-function custom_realpath {
-    [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
 }
 
 function check_tools {
