@@ -309,8 +309,10 @@ function decrypt_file {
     else
         gpg "`basename "$crypted_file"`" &> $NULL
     fi
+    status_code=$?
 
-    if [ $? != 0 ]; then
+    gpg-connect-agent reloadagent /bye &> /dev/null
+    if [ $status_code != 0 ]; then
         printf "${R}Errore durante la decodifica.\n${NC}"
         on_exit
         exit $EXIT_FAILURE
