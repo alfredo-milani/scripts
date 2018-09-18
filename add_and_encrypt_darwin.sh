@@ -5,7 +5,7 @@
 # Autore: alfredo
 # Data: mer 21 feb 2018, 19.24.21, CET
 # Licenza: MIT License
-# Versione: 1.0.0
+# Versione: 1.5.0
 # Note: --/--
 # Versione bash: 4.4.19(1)-release
 # ============================================================================
@@ -14,7 +14,7 @@
 
 ##### ##################################
 ##### Inizio controllo preliminare #####
-bash_shell="/bin/bash"
+bash_shell="/usr/local/bin/bash"
 if [ "$bash_shell" != "${SHELL: -${#bash_shell}}" ]; then
     # TODO controllare il numero di versione (deve essere >= 3.X)
     printf "\nLo script corrente deve essere eseguito da una shell bash con versione superiore alla 3.X.\nScaricarla con il tool brew e riprovare.\n"
@@ -35,10 +35,11 @@ declare -r BD='\e[1m' # Bold
 
 declare -r EXIT_SUCCESS=0
 declare -r EXIT_FAILURE=1
-declare -r null_str="--/--"
-declare -r NULL="/dev/null"
+declare -r EXIT_REBOOT_REQUIRED=2
+declare -r null_str='--/--'
+declare -r NULL='/dev/null'
 declare -r script_name=`basename "$0"`
-declare -r dir_conf="$HOME/.config/${script_name%.*}"
+declare -r dir_conf="/usr/local/scripts/.config/${script_name%.*}"
 declare -r config_file="$dir_conf/asset"
 declare show_dirs=false
 declare only_tmp=false
@@ -47,16 +48,18 @@ declare same_psw=false
 # NOTA: declare, flag -A non saupportato in bash version <= 3.x
 declare -A structure=()
 declare -A key_of_command=()
-declare tmp_base="/tmp"
-declare tmp_file="`basename $0`.XXXXXX"
-declare tmp_dir=""
-declare structure_file=""
-declare crypted_file=""
-declare decrypted_file=""
-declare decompressed_file=""
-declare ext=""
-declare password=""
-declare cipher_type="aes128"
+declare tmp_base='/tmp'
+declare tmp_file="`basename "$0"`.XXXXXX"
+declare tmp_dir=''
+declare structure_file=''
+declare crypted_file=''
+declare decrypted_file=''
+declare decompressed_file=''
+declare ext=''
+declare password=''
+declare cipher_type='aes128'
+declare main_file=''
+
 
 
 function manage_signal {
@@ -67,6 +70,7 @@ function get_asset {
     if [ -f "$config_file" ]; then
         while IFS='=' read -r key value; do
             case "$key" in
+                main_file )  main_file="$value" ;;
                 structure_file )  structure_file="$value" ;;
             esac
         done <<< `sed -e 's/[[:space:]]*#.*// ; /^[[:space:]]*$/d' "$config_file"`
@@ -82,6 +86,11 @@ function check_asset {
         # Primo avvio
         mkdir -p "$dir_conf"
         cat <<EOF > "$config_file"
+# File principale su cui operare
+[main file]
+main_file=
+
+# File contenente la struttura dell'archivio compresso
 [gerarchia directory]
 structure_file=
 EOF
@@ -108,8 +117,7 @@ function validate_new_files {
     for el in ${!key_of_command[@]}; do
         key="$el"
         value="${key_of_command["$key"]}"
-        if ! [ -f "$value" ] &&
-        ! [ -d "$value" ]; then
+        if ! [ -f "$value" ] && ! [ -d "$value" ]; then
             printf "${Y}Attenzione! Il file \'$value\' sarà ignorato perché non esistente.\n${NC}"
             unset key_of_command["$key"]
         else
@@ -140,6 +148,9 @@ function usage {
 
     -h | -H
         visualizza questo aiuto
+
+    -set-main-file file | --SET-MAIN-FILE file
+        imposta il file compresso e criptato di default
 
     -same-psw | -SAME-PSW
         utilizza la stessa password usata per decriptare il vecchio archivio
@@ -185,11 +196,11 @@ function parse_input {
                     printf "${BD}Inizio file di configurazione locato in \'$structure_file\':\n${NC}"
                     cat "$structure_file"
                     printf "${BD}Fine file di configurazione.\n\n${NC}"
-                    exit $EXIT_SUCCESS
+                    return $EXIT_SUCCESS
                 else
                     printf "${R}File per la configurazione della gerarchia di directory non presente.\nUtilizzare il flag -h per ottenere informazioni su come impostarlo\n${NC}"
                     on_exit
-                    exit $EXIT_FAILURE
+                    return $EXIT_FAILURE
                 fi
                 ;;
 
@@ -197,8 +208,26 @@ function parse_input {
                 usage
                 ;;
 
-            -only-tmp | -ONLY-TMP)
+            -only-tmp | -ONLY-TMP )
                 only_tmp=true
+                shift
+                ;;
+
+            -set-main-file | --SET-MAIN-FILE )
+                shift
+                if [ -f "$1" ]; then
+                    # specifica default file che rappresenta l'archivio compresso e criptato
+                    main_file="`custom_realpath "$1"`"
+                    sed -i "_old" "s:main_file=.*:main_file=$main_file:g" "$config_file"
+                    sync
+                    rm -f *"_old"
+                    printf "${G}Il file $1 è stato impostato correttamente come file di default.\n${NC}"
+                    return $EXIT_REBOOT_REQUIRED
+                else
+                    printf "${Y}File: $1 non esistente.\n${NC}"
+                    on_exit
+                    return $EXIT_FAILURE
+                fi
                 shift
                 ;;
 
@@ -221,11 +250,11 @@ function parse_input {
                     sync
                     rm -f *"_old"
                     printf "${G}Il file $structure_file è stato impostato correttamente come file per ottenere la struttura dell'archivio compresso.\nOra è possibile utilizzare i flags specificati in questo file per operare sull'archivio compresso\n${NC}"
-                    exit $EXIT_SUCCESS
+                    return $EXIT_REBOOT_REQUIRED
                 else
                     printf "${Y}File: $1 non esistente; è necessario specificare un file per configurare la gerarchia di directory dell'archivio compresso\n${NC}"
                     on_exit
-                    exit $EXIT_FAILURE
+                    return $EXIT_FAILURE
                 fi
                 shift
                 ;;
@@ -246,23 +275,24 @@ function parse_input {
                     printf "${BD}${i}.${NC} $el\t${BD}-->${NC}\t${structure["$el"]}\n"
                     i=$((++i))
                 done
-                exit $EXIT_SUCCESS
+                return $EXIT_FAILURE
                 ;;
 
             * )
                 [ "${#structure[@]}" -eq 0 ] && load_structure
                 get_operation_on_archive "$1" "$2" && shift && shift && continue
 
-                if [ ${#crypted_file} != 0 ]; then
+                if ! [ -z "$crypted_file" ]; then
                     printf "${Y}Il file criptato è già stato aggiunto ($crypted_file).\nIl file $1 non sarà considerato.\nContinuare comunque? [Yes / No]\n${NC}"
 
                     read choise
                     if [ "$choise" != "Yes" ]; then
                         printf "Uscita.\n"
-                        exit $EXIT_SUCCESS
+                        return $EXIT_FAILURE
                     fi
                 else
-                    check_file "$1"
+                    # check_file "$1"
+                    crypted_file="$1"
                 fi
                 shift
                 ;;
@@ -271,16 +301,21 @@ function parse_input {
 }
 
 function check_file {
-    if [ ${#1} -eq 0 ]; then
-        printf "${R}Non è stato specificato alcun file su cui operare.\n${NC}"
-        on_exit
-        exit $EXIT_FAILURE
-    elif [ -f "$1" ]; then
-        crypted_file="`custom_realpath "$1"`"
+    if [ -z "$1" ]; then
+        if ! [ -f "$main_file" ]; then
+            printf "${R}Non è stato specificato alcun file su cui operare e il file di default non è valido.\n${NC}"
+            return $EXIT_FAILURE
+        fi
+        crypted_file="$main_file"
+        return $EXIT_SUCCESS
     else
-        printf "${R}Il file \'$1\' non esiste.\n${NC}"
-        on_exit
-        exit $EXIT_FAILURE
+        if [ -f "$1" ]; then
+            crypted_file="$1"
+            return $EXIT_SUCCESS
+        else
+            printf "${R}Il file specificato non esiste.\n${NC}"
+            return $EXIT_FAILURE
+        fi
     fi
 }
 
@@ -367,8 +402,8 @@ function decompress_file {
             ;;
 
         * )
-                printf "${R}Formato sconosciuto: \'$ext\'. Estrazione non riuscita.\n${NC}"
-                return $EXIT_FAILURE
+            printf "${R}Formato sconosciuto: \'$ext\'. Estrazione non riuscita.\n${NC}"
+            return $EXIT_FAILURE
     esac
 }
 
@@ -427,11 +462,10 @@ EOF
 }
 
 function print_commands {
-    printf "${BD}Files da aggiungere all'archivio:\n${NC}"
-
     if [ ${#key_of_command[@]} -eq 0 ]; then
-        printf "\t${U}Nessun file da aggiungere. Il file verrà decriptato e decompresso.${NC}\n"
+        printf "${U}Nessun file da aggiungere. Il file verrà decriptato e decompresso.${NC}\n"
     else
+        printf "${BD}Files da aggiungere all'archivio:\n${NC}"
         i=1
         for el in ${!key_of_command[@]}; do
             printf "\t${BD}${i}.${NC} $el\t${BD}-->${NC}\t${structure["$el"]}\n"
@@ -475,7 +509,7 @@ function check_tools {
 
 
 function main {
-	! check_tools declare sed read printf exit trap cat exit shift mktemp echo gpg cp && exit $EXIT_FAILURE
+	! check_tools declare sed read printf exit trap cat exit shift mktemp echo gpg cp && return $EXIT_FAILURE
 	(
 		check_tools 7z &> $NULL ||
 		check_tools zip &> $NULL ||
@@ -485,17 +519,18 @@ function main {
 		check_tools bz2 &> $NULL
 	) || (
 		printf "${R}Non è stato trovato alcun tool per estrarre i file (7z, zip, tar, xz, gz, bz2).\nUscita...\n\n${NC}" &&
-		exit $EXIT_FAILURE
+		return $EXIT_FAILURE
 	)
 
     manage_signal
     check_asset
-    parse_input "$@"
+    parse_input "$@" || return $EXIT_FAILURE
+
     [ "${#structure[@]}" -eq 0 ] && load_structure
 
     [ $# -gt 1 ] && validate_new_files
 
-    check_file "$crypted_file"
+    check_file "$crypted_file" || return $EXIT_FAILURE
 
     create_tmp_env
     print_vars
@@ -514,8 +549,9 @@ function main {
 
     on_exit
 
-    exit $EXIT_SUCCESS
+    return $EXIT_SUCCESS
 }
 
 
 main "$@"
+exit $?
