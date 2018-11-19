@@ -303,6 +303,7 @@ function parse_input {
 function check_file {
     if [ -z "$1" ]; then
         if ! [ -f "$main_file" ]; then
+            printf "${R}File di default: $main_file"
             printf "${R}Non è stato specificato alcun file su cui operare e il file di default non è valido.\n${NC}"
             return $EXIT_FAILURE
         fi
