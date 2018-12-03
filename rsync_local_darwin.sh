@@ -5,197 +5,173 @@
 # Autore: alfredo
 # Data: Fri Nov  2 23:19:57 CET 2018
 # Licenza: MIT License
-# Versione: 1.0.0
+# Versione: 1.5.0
 # Note: --/--
 # Versione bash: 4.4.19(1)-release
 # ============================================================================
-
-declare -r -i EXIT_SUCCESS=0
-declare -r -i EXIT_FAILURE=1
-declare -r DEV_NULL='/dev/null'
-declare -r current_script_name="`basename "$0"`"
-declare -r mount_script='/usr/local/scripts/mount_drive_darwin.sh'
-declare -r tmp_dir='/tmp'
-declare -r log_file=''
-declare ask=false
 
 # Colori
 declare -r R='\033[0;31m' # red
 declare -r Y='\033[1;33m' # yellow
 declare -r G='\033[0;32m' # green
+declare -r DG='\033[1;30m' # dark gray
+declare -r U='\033[4m' # underlined
+declare -r BD='\e[1m' # Bold
 declare -r NC='\033[0m' # No Color
 
+# Readonly vars
+declare -r -i EXIT_SUCCESS=0
+declare -r -i EXIT_FAILURE=1
+declare -r -i EXIT_MISSING_BACKUP_FILENAMES=2
+declare -r DEV_NULL='/dev/null'
+declare -r NULL='null'
+declare -r script_name="`basename "$0"`"
+
+declare tmp_dir='/tmp'
+declare log_file="${NULL}"
+declare config_file="/usr/local/scripts/.config/${script_name%.*}/asset"
+declare -A source_dest_backup=()
+declare -A source_dest_archive=()
+
+declare print_conf=false
+declare ask=true
 declare log_on_file=false
-declare b_Alfredo=false
-declare b_Chrome=false
-declare b_Projects=false
-declare -A a_files=()
-
-declare backup_vol='Data Backup'
-declare -r Alfredo='Alfredo'
-declare -r Chrome='Preferiti_Chrome'
-declare -r Projects='Projects'
-
-declare source_files='/Volumes/Data'
-declare -r source_files_Alfredo="$source_files/$Alfredo/"
-declare -r source_files_Chrome="$source_files/$Chrome/"
-declare -r source_files_Projects="$source_files/$Projects/"
-
-### TODO al posto di /Volumes/%s/Main -> %s/Main
-declare backup_main='/Volumes/%s/Main'
-declare backup_main_Alfredo=''
-declare backup_main_Chrome=''
-declare backup_main_Projects=''
-
-declare backup_archive='/Volumes/%s/Archivio'
-
-declare backup_other='Volumes/%s/Other'
 
 
+
+function read_filename_to_backup {
+	if ! [ -s "${config_file}" ]; then
+		msg 'R' "ERRORE: Il file \"${config_file}\" sembra non contenere informazioni utili."
+		return ${EXIT_FAILURE}
+    elif [ -f "${config_file}" ]; then
+        while IFS='' read -r path; do
+        	# bug: se legge riga del tipo ":/Volumes" considera chiave:"Volumes", value:"null"
+        	# invece dovrebbe considerare il contrario
+        	tmp=(${path//:/ })
+        	[ -z "${tmp[0]}" ] && tmp[0]="${NULL}"
+        	[ -z "${tmp[1]}" ] && tmp[1]="${NULL}"
+
+    		source_dest_backup+=(["${tmp[0]}"]="${tmp[1]}")
+		done <<< `sed -e 's/[[:space:]]*\[.*]//; s/[[:space:]]*#.*//; /^[[:space:]]*$/d;' "${config_file}"`
+    else
+        msg 'R' "ERRORE: il file utilizzato per l'inizializzazione non è stato trovato! (PATH: ${config_file})"
+        return ${EXIT_FAILURE}
+    fi
+}
 
 function msg {
-	case "$1" in
-		G ) printf "${G}$2${NC}\n" ;;
-		Y ) printf "${Y}$2${NC}\n" ;;
-		R ) printf "${R}$2${NC}\n" ;;
-		* ) printf "${NC}$2\n" ;;
+	case "${1}" in
+		G ) printf "${G}${2}${NC}\n" ;;
+		Y ) printf "${Y}${2}${NC}\n" ;;
+		R ) printf "${R}${2}${NC}\n" ;;
+		DG ) printf "${DG}${2}${NC}\n" ;;
+		U ) printf "${U}${2}${NC}\n" ;;
+		BD ) printf "${BD}${2}${NC}\n" ;;
+		* ) printf "${NC}${2}\n" ;;
 	esac
 }
 
 function get_response {
-	msg "$1" "$2\t[ S / N ]"
+	msg "${1}" "${2}\t[ S / N ]"
 
 	read -e choose
-	if [ "$choose" == "s" ] || [ "$choose" == "S" ]; then
+	if [ "${choose}" == "s" ] || [ "${choose}" == "S" ]; then
 		return $EXIT_SUCCESS
 	else
 		return $EXIT_FAILURE
 	fi
 }
 
-function update_backup_main {
-	backup_main="`printf "$backup_main" "$1"`"
-	backup_main_Alfredo="$backup_main/$Alfredo/"
-	backup_main_Chrome="$backup_main/$Chrome/"
-	backup_main_Projects="$backup_main/$Projects/"
-}
-
 function execute_rsync {
-<<COMM
-	if [ "$log_on_file" == true ]; then
-		echo "SINCRONIZZAZIONE $1 IN $2" >> "$log_file"
+	if [ "${log_on_file}" == true ]; then
+		echo "SINCRONIZZAZIONE ${1} IN ${2}" >> "${log_file}"
 		rsync --delete --progress -avu --no-links 						\
 			--exclude=".fseventsd" --exclude=".TemporaryItems" 			\
 			--exclude=".Trashes" --exclude=".Spotlight-V100"  			\
 			--exclude=".DocumentRevisions-V100" --exclude=".DS_Store" 	\
-			--exclude=".PKInstallSandboxManager" "$1" "$2" &>> "$log_file"
-		echo -e "\n\n" >> "$log_file"
+			--exclude=".PKInstallSandboxManager" "${1}" "${2}" &>> "${log_file}"
+		echo -e "\n\n" >> "${log_file}"
 	else
 		rsync --delete --progress -avu --no-links 						\
 			--exclude=".fseventsd" --exclude=".TemporaryItems" 			\
 			--exclude=".Trashes" --exclude=".Spotlight-V100"  			\
 			--exclude=".DocumentRevisions-V100" --exclude=".DS_Store" 	\
-			--exclude=".PKInstallSandboxManager" "$1" "$2"
+			--exclude=".PKInstallSandboxManager" "${1}" "${2}"
 	fi
-COMM
-
-	[ "$log_on_file" == true ] && msg 'NC' "Utilizzo file di log: $log_file"
-	echo "$1" "$2"
 	
-	return $?
-}
-
-function file_exist_and_is_dir {
-	[ -e "$1" ] && [ -d "$1" ] && return $EXIT_SUCCESS
-	return $EXIT_FAILURE;
+	return ${?}
 }
 
 function usage {
 	cat <<EOF
 # Utilizzo
 
-	$current_script_name -[options]
+	$script_name -[options]
 
 # Options
 
-	-all part_id | --all part_id
-		Equivale a: $current_script_name -a -p -c
-
-	-a | --sync-alfredo
-		Sincronizzazione della directory "$Alfredo", contenuta nella partizione da specificare con il flag -part, conte con il contenuto della directory "$source_files_Alfredo".
-
-	-ar filename | --archive filename
+	-a filename | --archive filename
 		Archivia il file (o directory) filename nella directory appropriata.
 		Il file verrà eliminato dalla sorgente.
 
-	-ask | --ask-permission
-		Chiede il permesso dell'utente prima di eseguire un'operazione.
+	-nask | --not-ask-permission
+		Non chiede il permesso dell'utente prima di eseguire un'operazione.
 
-	-c | --sync-chrome-prefs				
-		Sincronizzazione della directory "$Chrome", contenuta nella partizione da specificare con il flag -part, con il contenuto della directory "$backup_main_Chrome".
+	-c | --print-conf
+		Visulizza la configurazione corrente del tool.
+
+	-f filename | --conf-file filename
+		Utilizzo del file filename per la lettura delle directory su cui operare.
+		Il file può contenere commenti e deve avere il seguente formato:
+
+		/directory/sorgente_uno:/directory/destinazione_uno
+		/directory/sorgente_due:/directory/destinazione_due
 
 	-l | --log-on-file
 		Salva l'output del comando rsync su un file nella directory /tmp.
 
-	-m part_id | --mount part_id
-		Utilizza lo script $mount_script per montare le partizioni che dovranno essere sincronizzate.
-		Questa opzione, se utilizzata, DEVE essere la PRIMA opzione specificata.
-
-	-p | --sync-projects
-		Sincronizzazione della directory "$Projects", contenuta nella partizione da specificare con il flag -part, con il contenuto della directory "$backup_main_Projects".
-
-	-s | --show-ext-dev
-		Mostra i devices fisici estrerni collegati che è possibile montare.
-
-	-t | -set-tmp-dir
+	-t directory | -set-tmp-dir directory
 		Imposta la directory per i files temporanei.
-
-	-v volume | --set-volume volume
-		Serve per specificare il nome del volume su cui vuole essere fatta la sincronizzazione.
-		Utilizzare il flag -s per conoscere le possibili partizioni.
-		### TODO ###
-		Esempio, se il volume è montato in /Volumes/Data Backup, si dovrà digitare -v "Data Backup"
 
 EOF
 }
 
 function parse_input {
-	if [ $# -eq 0 ]; then
-		usage
-		return $EXIT_FAILURE
-	fi
-
 	while [ $# -gt 0 ]; do
 		case "$1" in
-			-all | --all )
-				b_Chrome=true
-				b_Alfredo=true
-				b_Projects=true
+			-a | --archive )
+				shift
+				tmp=(${1//:/ })
+	        	[ -z "${tmp[0]}" ] && tmp[0]="${NULL}"
+	        	[ -z "${tmp[1]}" ] && tmp[1]="${NULL}"
+
+	        	source_dest_archive+=(["${tmp[0]}"]="${tmp[1]}")
+	        	shift
+				;;
+
+			-nask | --ask-permission )
+				ask=false
 				shift
 				;;
 
-			-a | --sync-alfredo )
-				b_Alfredo=true
+			-c | --print-conf )
+				print_conf=true
 				shift
 				;;
 
-			-ar | --archive )
-				echo "### TOOD ###"
-				;;
-
-			-ask | --ask-permission )
-				ask=true
+			-f | --conf-file )
 				shift
-				;;
-
-			-c | --sync-chrome-prefs )
-				b_Chrome=true
+				if [ -f "${1}" ]; then
+					config_file="${1}"
+				else
+					echo "Non è possibile utilizzare il file \"${1}\". Verrà utilizzato quello di default: ${config_file}"
+				fi
 				shift
 				;;
 
 			-[hH] | --help | --HELP )
 				usage
-				break
+				return ${EXIT_FAILURE}
 				;;
 
 			-l | --log-on-file )
@@ -203,120 +179,145 @@ function parse_input {
 				shift
 				;;
 
-			-m | --mount )
-				echo "### TODO ###"
-				# shift
-				# echo "Per montare le partizioni sono necessari i permessi di amministratore"
-				# BUG
-				# sudo "$mount_script" -p "$1"
-				# END BUG
-				# update_backup_main "$1"
-				# shift
-				;;
-
-			-p | --sync-projects )
-				b_Projects=true
-				shift
-				;;
-
-			-s | --show-ext-dev )
-				diskutil list external physical
-				shift
-				;;
-
 			-t | --set-tmp-dir )
 				shift
-				if [ -d "$1" ]; then
-					tmp_dir="$1"
-					echo "Directory per i files temporanei impostata correttamente: \"$tmp_dir\""
+				if [ -d "${1}" ]; then
+					tmp_dir="${1}"
 				else
-					echo "Directory \"$1\" non esistente. Verrà utilizzata quella di default: $tmp_dir"
-				fi
-
-				log_file=`mktemp "$tmp_dir/$current_script_name.XXXXXX"`
-				msg "NC" "File di log: \"$log_file\""
-				shift
-				;;
-
-			-v | --set-volume )
-				shift
-				if ! file_exist_and_is_dir "$1"; then
-					echo "Specificare una partizione valida già montata"
-					echo "Utilizzare il flag -s per l'elenco delle partizioni che è possibile montare"
-					return $EXIT_FAILURE
-				fi
-				update_backup_main "$1"
+					echo "Directory \"${1}\" non esistente. Verrà utilizzata quella di default: ${tmp_dir}"
+				fi				
 				shift
 				;;
 
 			* )
 				echo "Opzione \"$1\" sconosciuta"
-				return $EXIT_FAILURE
+				return ${EXIT_FAILURE}
 				;;
 		esac
 	done
 }
 
 function sync_operation {
-	if [ "$1" == true ]; then
-		msg 'Y' "Sincronizzazione direcotry \"$2\" nella directory \"$3\""
-		if [ "$ask" == true ] && ! get_response "Y" "Continuare?"; then
-			msg "Y" "La sincronizzazione di \"$2\" in \"$3\" è stata interrotta"
-			return $EXIT_FAILURE
-		fi
+	msg 'NC' "\nSincronizzazione direcotry \"${1}\" nella directory \"${2}\""
+	if [ "${ask}" == true ] && ! get_response 'Y' "Continuare?"; then
+		msg 'Y' "La sincronizzazione di \"${1}\" in \"${2}\" è stata interrotta"
+		return ${EXIT_FAILURE}
+	fi
 
-		execute_rsync "$2" "$3"
-		if [ $? == $EXIT_SUCCESS ]; then
-			msg "G" "La sincronizzazione ha avuto esito positivo"
-		else
-			msg "R" "Qualcosa è andato storto durante la sincronizzazione"
-		fi
+	execute_rsync "${1}" "${2}"
+	if [ ${?} == ${EXIT_SUCCESS} ]; then
+		msg 'G' "La sincronizzazione ha avuto esito positivo"
+	else
+		msg 'R' "Qualcosa è andato storto durante la sincronizzazione"
 	fi
 }
 
 function archive {
-	# TODO
-	if [ "$b_Chrome" == true ]; then
-		msg 'Y' "Sincronizzazione direcotry SOURCE nella directory DEST"
-		if [ "$ask" == true ] && ! get_response "Y" "Continuare?"; then
-			msg "Y" "La sincronizzazione di \"$1\" in \"$2\" è stata interrotta"
-			return $EXIT_FAILURE
-		fi
+	msg 'NC' "\nArchiviazione directory \"${1}\" nella directory \"${2}\""
+	if [ "${ask}" == true ] && ! get_response 'Y' "Continuare?"; then
+		msg 'Y' "L'archiviazione di \"${1}\" in \"${2}\" è stata interrotta"
+		return ${EXIT_FAILURE}
+	fi
 
-		execute_rsync "$source_files_Chrome" "$backup_main_Chrome"
-		if [ $? == $EXIT_SUCCESS ]; then
-			msg "G" "La sincronizzazione ha avuto esito positivo"
-		else
-			msg "R" "Qualcosa è andato storto durante la sincronizzazione"
-		fi
+	mv "${1}" "${2}"
+	if [ ${?} == ${EXIT_SUCCESS} ]; then
+		msg 'G' "L'archivizione ha avuto esito positivo"
+	else
+		msg 'R' "Qualcosa è andato storto durante l'archiviazione"
 	fi
 }
 
-function print_conf {
-	cat <<EOF
-##########
-### Configurazione
-##
-# Path sorgente backup: 
-# Path destinazione backup:
-# Path sorgente archiviazione:
-# Path destinazione archiviazione:  
-##########
-EOF
+function print_configuration {
+	msg 'BD' "##### Configurazione ${NC}- ${config_file}"
+
+	if [ ${#source_dest_archive[@]} -eq 0 ]; then
+		msg 'BD' "* Filenames considerati per l'archiviazione: ${NC}${NULL}"
+	else
+		msg 'BD' "* Filenames considerati per l'archiviazione:"
+		msg 'BD' "\t\tSorgente\t\t\tDestinazione"
+		i=1
+		for k in ${!source_dest_archive[@]}; do
+			printf "\t${BD}${i}.${NC} ${k} -> ${source_dest_archive["${k}"]}\n"
+			i=$((++i))
+		done
+	fi
+
+    if [ ${#source_dest_backup[@]} -eq 0 ]; then
+    	msg 'BD' "* Filenames considerati per il backup: ${NC}${R}${NULL}"
+		msg 'BD' "#####"
+    	return ${EXIT_MISSING_BACKUP_FILENAMES}
+	else
+		msg 'BD' "* Filenames considerati per il backup:"
+		msg 'BD' "\t\tSorgente\t\t\tDestinazione"
+		i=1
+		for k in ${!source_dest_backup[@]}; do
+			printf "\t${BD}${i}.${NC} ${k} -> ${source_dest_backup["${k}"]}\n"
+			i=$((++i))
+		done
+	fi
+
+    printf "${BD}* Directory files temporanei:${NC} ${tmp_dir}\n"
+
+    if [ "${log_on_file}" == true ] && [ -n "${log_file}" ]; then
+    	printf "${BD}* File di log:${NC} ${log_file}\n"
+    fi
+
+    msg 'BD' "#####\n"
+}
+
+function perform_backup {
+	for k in ${!source_dest_backup[@]}; do
+		sync_operation "${k}" "${source_dest_backup["${k}"]}"
+	done
+}
+
+function perform_archive {
+	for k in ${!source_dest_archive[@]}; do
+		archive "${k}" "${source_dest_archive["${k}"]}"
+	done
+}
+
+function lazy_init_vars {
+	[ "${log_on_file}" == true ] && log_file="`mktemp "${tmp_dir}/${script_name%.*}.XXXXXX"`"
+}
+
+function validation_check {
+	file_error=false;
+
+	for k in ${!source_dest_backup[@]}; do
+		! [ -d "${k}" ] && msg 'Y' "Attenzione: il file \"${k}\" non esiste." && file_error=true
+		! [ -d "${source_dest_backup["${k}"]}" ] && msg 'Y' "Attenzione: il file \"${source_dest_backup["${k}"]}\" non esiste." && file_error=true
+	done
+
+	for k in ${!source_dest_archive[@]}; do
+		! [ -d "${k}" ] && msg 'Y' "Attenzione: il file \"${k}\" non esiste." && file_error=true
+		! [ -d "${source_dest_archive["${k}"]}" ] && msg 'Y' "Attenzione: il file \"${source_dest_archive["${k}"]}\" non esiste." && file_error=true
+	done
+
+	[ "${file_error}" == true ] && return ${EXIT_FAILURE} || return ${EXIT_SUCCESS}
 }
 
 function main {
-	! parse_input "$@" && return $EXIT_FAILURE
+	parse_input "${@}" || return ${EXIT_FAILURE}
 
-	print_conf
+	lazy_init_vars
 
-	sync_operation "$b_Chrome" "$source_files_Chrome" "$backup_main_Chrome"
-	sync_operation "$b_Alfredo" "$source_files_Alfredo" "$backup_main_Alfredo"
-	sync_operation "$b_Projects" "$source_files_Projects" "$backup_main_Projects"
-	archive
+	read_filename_to_backup || return ${EXIT_FAILURE}
 
-	return $EXIT_SUCCESS
+	if [ "${print_conf}" == true ]; then
+		print_configuration || return ${?}
+	fi
+
+	if ! validation_check; then
+		msg 'R' "Non è possibile continuare perché alcuni dei path specificati non esistono."
+		return ${EXIT_FAILURE}
+	fi
+
+	perform_archive
+	perform_backup
+
+	return ${EXIT_SUCCESS}
 }
 
-main "$@"
-exit $?
+main "${@}"
+exit ${?}
