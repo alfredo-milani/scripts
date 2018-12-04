@@ -27,7 +27,6 @@ declare -r -i EXIT_FAILURE=1
 declare -r -i EXIT_MISSING_BACKUP_FILENAMES=2
 declare -r DEV_NULL='/dev/null'
 declare -r NULL='null'
-declare -r script_name="`basename "$0"`"
 
 if [ ${BASH_V} -lt ${MIN_BASH_V} ]; then
 	echo "ERRORE: Version bash obsoleta."
@@ -36,15 +35,17 @@ if [ ${BASH_V} -lt ${MIN_BASH_V} ]; then
 	exit ${EXIT_FAILURE}
 fi
 
+declare script_name
+declare config_file
 declare tmp_dir='/tmp'
 declare log_file="${NULL}"
-declare config_file="/usr/local/scripts/.config/${script_name%.*}/asset"
 declare -A source_dest_backup=()
 declare -A source_dest_archive=()
 
 declare print_conf=false
 declare ask=true
 declare log_on_file=false
+declare delete_on_archive=true
 
 
 function msg {
@@ -65,7 +66,7 @@ function check_tools {
 	while [ ${#} -gt 0 ]; do
 		command -v "${1}" &> ${DEV_NULL}
 		if [ ${?} != 0 ]; then
-			msg 'R' "* Il tool ${1}, necessario per l'esecuzione di questo script, non è presente nel sistema.\nInstallarlo per poter continuare."
+			msg 'R' "Il tool \"${1}\", necessario per l'esecuzione di questo script, non è presente nel sistema.\nInstallarlo per poter continuare."
 			tools_missing=true
 		fi
 		shift
@@ -132,11 +133,11 @@ function execute_rsync {
 
 function usage {
 	cat <<EOF
-# Utilizzo
+`printf "${BD}# Utilizzo${NC}"`
 
-	$script_name -[options]
+	${script_name} -[options]
 
-# Options
+`printf "${BD}# Options${NC}"`
 
 	-a filename | --archive filename
 		Archivia il file (o directory) filename nella directory appropriata.
@@ -157,6 +158,10 @@ function usage {
 
 	-l | --log-on-file
 		Salva l'output del comando rsync su un file nella directory /tmp.
+
+	-nd | --not-delete-on-archive
+		Questo flags ha effetto solo se si sta archiviando un file utilizzando l'opzione -a filename.
+		Permette di non eliminare il file sorgente dopo aver copiato il file nella directory di destinazione.
 
 	-t directory | -set-tmp-dir directory
 		Imposta la directory per i files temporanei.
@@ -209,6 +214,11 @@ function parse_input {
 				shift
 				;;
 
+			-nd | --not-delete-on-archive )
+				delete_on_archive=false
+				shift
+				;;
+
 			-t | --set-tmp-dir )
 				shift
 				if [ -d "${1}" ]; then
@@ -220,7 +230,7 @@ function parse_input {
 				;;
 
 			* )
-				echo "Opzione \"$1\" sconosciuta"
+				echo "Opzione \"${1}\" sconosciuta"
 				return ${EXIT_FAILURE}
 				;;
 		esac
@@ -254,8 +264,16 @@ function archive {
 		return ${EXIT_FAILURE}
 	fi
 
-	mv "${1}" "${2}"
-	if [ ${?} == ${EXIT_SUCCESS} ]; then
+	local rc
+	if [ "${delete_on_archive}" == true ]; then
+		mv "${1}" "${2}"
+		rc=${?}
+	else
+		cp -r "${1}" "${2}"
+		rc=${?}
+	fi
+	
+	if [ ${rc} == ${EXIT_SUCCESS} ]; then
 		msg 'G' "L'archivizione ha avuto esito positivo"
 	else
 		msg 'R' "Qualcosa è andato storto durante l'archiviazione"
@@ -263,7 +281,7 @@ function archive {
 }
 
 function print_configuration {
-	msg 'BD' "##### Configurazione ${NC}- ${config_file}"
+	msg 'BD' "##### Configurazione"
 
 	printf "${BD}* Directory files temporanei:${NC} ${tmp_dir}\n"
 
@@ -285,10 +303,10 @@ function print_configuration {
 
     if [ ${#source_dest_backup[@]} -eq 0 ]; then
     	msg 'BD' "* Filenames considerati per il backup: ${NC}${R}${NULL}"
-		msg 'BD' "#####"
+		msg 'BD' "#########################"
     	return ${EXIT_MISSING_BACKUP_FILENAMES}
 	else
-		msg 'BD' "* Filenames considerati per il backup:"
+		msg 'BD' "* Filenames considerati per il backup: ${NC}- ${config_file}"
 		msg 'BD' "\t\tSorgente\t\t\tDestinazione"
 		i=1
 		for k in "${!source_dest_backup[@]}"; do
@@ -297,7 +315,7 @@ function print_configuration {
 		done
 	fi
 
-    msg 'BD' "#####\n"
+    msg 'BD' "#########################\n"
 }
 
 function perform_backup {
@@ -310,6 +328,11 @@ function perform_archive {
 	for k in "${!source_dest_archive[@]}"; do
 		archive "${k}" "${source_dest_archive["${k}"]}"
 	done
+}
+
+function lazy_init_tool_vars {
+	script_name="`basename "${0}"`"
+	config_file="/usr/local/scripts/.config/${script_name%.*}/asset"
 }
 
 function lazy_init_vars {
@@ -334,7 +357,9 @@ function validation_check {
 
 function main {
 
-	check_tools rsync read printf [
+	check_tools rsync read printf test basename mv cp || return ${EXIT_FAILURE}
+
+	lazy_init_tool_vars
 
 	parse_input "${@}" || return ${EXIT_FAILURE}
 
