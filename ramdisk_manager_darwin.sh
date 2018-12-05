@@ -92,7 +92,7 @@ function check_tools {
 	local tools_missing=false
 
 	while [[ ${#} -gt 0 ]]; do
-		command -v "${1}" &> ${DEV_NULL}
+		command -v "${1}" &> "${DEV_NULL}"
 		if [[ ${?} != 0 ]]; then
 			msg 'R' "Il tool ${1}, necessario per l'esecuzione di questo script, non è presente nel sistema.\nInstallarlo per poter continuare."
 			tools_missing=true
@@ -153,9 +153,6 @@ function create_script {
 	chown root:wheel "${scripts_sys_path}/${script_name}"
 	# Impostazione permessi di esecuzione
 	chmod +x "${scripts_sys_path}/${script_name}"
-
-	# msg 'Y' "Per sicurezza controllare che lo script appartenga a root:wheel e che abbia i diritti di esecuzione"
-	# open "${scripts_sys_path}"
 }
 
 function create_and_launch_plist {
@@ -171,7 +168,7 @@ function create_and_launch_plist {
 	fi
 
 	# Creazione file plist nella directory di sistema
-	tee <<EOF "${plist_file}" 1> ${DEV_NULL}
+	tee <<EOF "${plist_file}" 1> "${DEV_NULL}"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -183,8 +180,6 @@ function create_and_launch_plist {
 	    <key>InitGroups</key>
 	    <true/>
 
-		<key>RunAtLoad</key>
-	    <true/>
 	    <key>KeepAlive</key>
 	    <false/>
 		<key>LaunchOnlyOnce</key>
@@ -225,13 +220,15 @@ EOF
 	chown root:wheel "${plist_file}"
 	# Imposto il caricamento automatico all'avvio del sistema
 	launchctl load -w "${plist_file}"
-
-	# msg 'Y' "Per sicurezza controllare che il file *.plist appartenga a root:wheel"
-	# open "${launch_daemons_sys_pat}"
 }
 
 function unload_script {
-	launchctl unload "${launch_daemons_sys_path}/${daemon_name}" || return ${EXIT_FAILURE}
+	# Disabilitazione caricamento automatico
+	launchctl unload -w "${launch_daemons_sys_path}/${daemon_name}" &> "${DEV_NULL}" || return ${EXIT_FAILURE}
+	# Rimozione file *.plist
+	rm -f "${launch_daemons_sys_path}/${daemon_name}"
+	# Eliminazione script
+	rm -f "${scripts_sys_path}/${script_name}"
 }
 
 function setup_ramdisk {
@@ -501,37 +498,47 @@ function create_trash {
 # -su
 function main {
 
+	# Controllo dipendenze
 	if [[ "${check_deps_op}" == true ]]; then
 		check_os || return ${EXIT_FAILURE}
 		check_tools printf open read test basename mv rm ln cp tee hdiutil diskutil newfs_apfs mkdir || return ${EXIT_FAILURE}
 	fi
 
+	# Inizializzazione variabili
 	lazy_init_tool_vars
 
+	# Parsing input utente
 	parse_input "${@}" || return ${EXIT_FAILURE}
 
+	# Creazione ramdisk
 	if [[ "${create_ramdisk_op}" == true ]]; then
 		create_ramdisk ${ramdisk_size} "${ramdisk_name}" "${ramdisk_mount_point}" || return ${?}
 	fi
 
+	# Creazione links all'interno del ramdisk
 	if [[ "${create_links_op}" == true ]]; then
 		create_links || return ${?}
 	fi
 
+	# Creazione directory Trash all'interno del ramdisk
+	if [[ "${create_trash_op}" == true ]]; then
+		create_trash || return ${?}
+	fi
+
+	# Creazione link del ramdisk all'interno della directory Download
 	if [[ "${create_link_Download_op}" == true ]]; then
 		create_link_Download
 	fi
 
+	# Setup script e file *.plist per la creazione automatica di un ramdisk ad avvio di sistema
 	if [[ "${setup_ramdisk_op}" == true ]]; then
 		check_root || return ${?}
 		setup_ramdisk || return ${?}
 	fi
 
-	if [[ "${create_trash_op}" == true ]]; then
-		create_trash || return ${?}
-	fi
-
+	# Rimozione script e file *.plist per la creazione automatica del ramdisk ad avvio sistema
 	if [[ "${unload_script_op}" == true ]]; then
+		check_root || return ${?}
 		unload_script || return ${EXIT_FAILURE}
 	fi
 
