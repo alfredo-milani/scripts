@@ -33,7 +33,6 @@ declare -r LOG='/var/log/ramdisk_manager.log'
 declare -r OS_MACOS='darwin'
 declare -r OS_V="${OSTYPE}"
 declare -r DEV_NULL='/dev/null'
-declare -r NULL='null'
 
 # Setup's paths
 declare -r download_path='/var/log'
