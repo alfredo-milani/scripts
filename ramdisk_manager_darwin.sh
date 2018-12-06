@@ -35,11 +35,12 @@ declare -r OS_V="${OSTYPE}"
 declare -r DEV_NULL='/dev/null'
 
 # Setup's paths
-declare -r download_path='/var/log'
-declare -r daemon_name='it.alfredo.ramdisk.manager'
+declare download_path='/Users/%s/Downloads'
+declare daemon_name='it.%s.ramdisk.manager'
 declare -r scripts_sys_path='/Library/Scripts/UtilityScripts'
 declare -r launch_daemons_sys_path='/System/Library/LaunchDaemons'
 
+declare username
 declare script_name
 declare script_filename
 
@@ -154,6 +155,11 @@ function create_script {
 }
 
 function create_and_launch_plist {
+	if [[ -z "${username}" ]]; then
+		msg 'R' "ERRORE: Il campo username NON può essere vuoto se si vuole fare il setup per l'avvio automatico del ramdisk.\nUtilizzare il flag -p username."
+		return ${EXIT_FAILURE}
+	fi
+
 	local plist_file="${launch_daemons_sys_path}/${daemon_name}.plist"
 
 	# Controllo se il file plist esiste già nella directory di destinazione
@@ -204,14 +210,21 @@ function create_and_launch_plist {
 			<string>--ramdisk-size</string>
 			<string>${ramdisk_size}</string>
 			<string>--not-ask-permission</string>
-			<string>--skip-deps-check</string>$(
-			[[ "${create_link_Download_op}" == true ]] && printf '\t\t\t<string>%s</string>\n' '--create-link-in-Download'
-			[[ "${create_trash_op}" == true ]] && printf '\t\t\t<string>%s</string>\n' '--create-trash'
-			if [[ "${#links_to_create[@]}" -gt 0 ]]; then
-				local IFS=':'
-				printf '\t\t\t<string>%s</string>\n' '--filenames-to-create'
-				printf '\t\t\t<string>%s</string>\n' "${links_to_create[*]}"
-			fi
+			<string>--skip-deps-check</string>
+			$(
+				if [[ "${create_link_Download_op}" == true ]]; then
+					printf '\t\t\t<string>%s</string>\n' '--set-user-profile'
+					printf '\t\t\t<string>%s</string>\n' "${username}"
+					printf '\t\t\t<string>%s</string>\n' '--create-link-in-Download'
+				fi
+				if [[ "${create_trash_op}" == true ]]; then
+					printf '\t\t\t<string>%s</string>\n' '--create-trash'
+				fi
+				if [[ "${#links_to_create[@]}" -gt 0 ]]; then
+					local IFS=':'
+					printf '\t\t\t<string>%s</string>\n' '--filenames-to-create'
+					printf '\t\t\t<string>%s</string>\n' "${links_to_create[*]}"
+				fi
 			)
 		</array>
 	</dict>
@@ -379,6 +392,10 @@ function usage {
 	-nask | --not-ask-permission
 		Non chiede il permesso dell'utente prima di eseguire un'operazione.
 
+	-p | --set-user-profile
+		Specifica lo username che si vuole utilizzare.
+		Questa opzione è utile per impostare correttamente i path che vengono usati con il flag -d e -su.
+
 	-s size_MB | --ramdisk-size size_MB
 		Specifica la dimensione del ramdisk in Mega Bytes.
 
@@ -440,6 +457,12 @@ function parse_input {
 				shift
 				;;
 
+			-p | --set-user-profile )
+				shift
+				username="${1}"
+				shift
+				;;
+
 			-s | --ramdisk-size )
 				shift
 				ramdisk_size=${1}
@@ -486,6 +509,11 @@ function lazy_init_tool_vars {
  	script_filename="${0}"
 }
 
+function lazy_init_vars {
+	download_path="`printf "${download_path}" "${username}"`"
+	daemon_name="`printf "${daemon_name}" "${username}"`"
+}
+
 function create_trash {
 	local dirname='Trash'
 	if mkdir "${ramdisk_mount_point}/${dirname}"; then
@@ -512,12 +540,15 @@ function main {
 		check_tools printf open read test basename mv rm ln cp tee hdiutil diskutil newfs_apfs mkdir || return ${EXIT_FAILURE}
 	fi
 
-	# Inizializzazione variabili
+	# Inizializzazione variabili del tool
 	lazy_init_tool_vars
 
 	# Parsing input utente
 	parse_input "${@}" || return ${EXIT_FAILURE}
 	validate_input || return ${EXIT_FAILURE}
+
+	# Inizializzazione variabili
+	lazy_init_vars
 
 	# Creazione ramdisk
 	if [[ "${create_ramdisk_op}" == true ]]; then
@@ -535,7 +566,11 @@ function main {
 
 		# Creazione link del ramdisk all'interno della directory Download
 		if [[ "${create_link_Download_op}" == true ]]; then
-			create_link_Download
+			if [[ -z "${username}" ]]; then
+				msg 'Y' "Il campo username NON può essere vuoto se si vuole creare un link nella directory Download.\nUtilizzare il flag -p username."
+			else
+				create_link_Download
+			fi
 		fi
 
 	# Setup script e file *.plist per la creazione automatica di un ramdisk ad avvio di sistema
