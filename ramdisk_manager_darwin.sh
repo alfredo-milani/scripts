@@ -60,7 +60,7 @@ declare create_links_op=false
 
 
 function log {
-	echo -e "${1}" >> "${LOG}"
+	printf "${1}\n" >> "${LOG}"
 }
 
 function msg {
@@ -125,7 +125,7 @@ function create_script {
 	# Controllo esistenza directory
 	if ! [[ -d "${scripts_sys_path}" ]]; then
 		msg 'Y' "La directory ${scripts_sys_path} non esiste."
-		if [ "${ask}" == true ] && ! get_response 'Y' "Crearla?"; then
+		if [[ "${ask}" == true ]] && ! get_response 'Y' "Crearla?"; then
 			msg 'Y' "La directory non è stata creata."
 			return ${EXIT_FAILURE}
 		fi
@@ -136,7 +136,7 @@ function create_script {
 	# Controllo se lo script esiste già nella directory di destinazione
 	if [[ -f "${scripts_sys_path}/${script_name}" ]]; then
 		msg 'Y' "Il file ${scripts_sys_path}/${script_name} esiste."
-		if [ "${ask}" == true ] && ! get_response 'Y' "Sovrascriverlo?"; then
+		if [[ "${ask}" == true ]] && ! get_response 'Y' "Sovrascriverlo?"; then
 			msg 'Y' "Il file non è stato sovrascitto."
 			return ${EXIT_FAILURE}
 		fi
@@ -160,7 +160,7 @@ function create_and_launch_plist {
 	# Controllo se il file plist esiste già nella directory di destinazione
 	if [[ -f "${plist_file}" ]]; then
 		msg 'Y' "Il file ${plist_file} esiste."
-		if [ "${ask}" == true ] && ! get_response 'Y' "Sovrascriverlo?"; then
+		if [[ "${ask}" == true ]] && ! get_response 'Y' "Sovrascriverlo?"; then
 			msg 'Y' "Il file non è stato sovrascitto."
 			return ${EXIT_FAILURE}
 		fi
@@ -206,9 +206,11 @@ function create_and_launch_plist {
 			<string>--create-sym-links</string>
 			<string>--create-ramdisk</string>
 			$(
-			[[ "${#links_to_create[@]}" -gt 0 ]] && printf '<string>%s</string>\n' '--filenames-to-create'
-			local IFS=':'
-			printf '\t\t\t<string>%s</string>\n' "${links_to_create[*]}"
+			if [[ "${#links_to_create[@]}" -gt 0 ]]; then
+				local IFS=':'
+				printf '<string>%s</string>\n' '--filenames-to-create'
+				printf '\t\t\t<string>%s</string>\n' "${links_to_create[*]}"
+			fi
 			)
 		</array>
 	</dict>
@@ -476,7 +478,7 @@ function parse_input {
 
 function lazy_init_tool_vars {
 	script_name="`basename "${0}"`"
- 	script_filename="`realpath -e "${script_name}"`"
+ 	script_filename="`realpath -e "${0}"`"
 }
 
 function create_trash {
@@ -500,7 +502,7 @@ function main {
 	# Controllo dipendenze
 	if [[ "${check_deps_op}" == true ]]; then
 		check_os || return ${EXIT_FAILURE}
-		check_tools printf open read test basename mv rm ln cp tee hdiutil diskutil newfs_apfs mkdir || return ${EXIT_FAILURE}
+		check_tools printf open read test basename realpath mv rm ln cp tee hdiutil diskutil newfs_apfs mkdir || return ${EXIT_FAILURE}
 	fi
 
 	# Inizializzazione variabili

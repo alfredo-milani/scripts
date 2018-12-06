@@ -111,9 +111,15 @@ function get_response {
 	fi
 }
 
+# ${1} -> sorgente
+# ${2} -> destinazione
 function execute_rsync {
 	if [ "${log_on_file}" == true ]; then
-		echo "SINCRONIZZAZIONE ${1} IN ${2}" >> "${log_file}"
+		cat << EOF >> "${log_file}"
+################################################################################
+###### SINCRONIZZAZIONE ${1} IN ${2}
+################################################################################
+EOF
 		rsync --delete --progress -avu --no-links 						\
 			--exclude=".fseventsd" --exclude=".TemporaryItems" 			\
 			--exclude=".Trashes" --exclude=".Spotlight-V100"  			\
@@ -237,11 +243,17 @@ function parse_input {
 	done
 }
 
+# ${1} -> sorgente
+# ${2} -> destinazione
 function sync_operation {
-	if [ "${1:(-1)}" == '/' ]; then
-		msg 'NC' "\nSincronizzazione CONTENUTI direcotry \"${1}\" nella directory \"${2}\""
+	if [ -d "${1}" ]; then
+		if [ "${1:(-1)}" == '/' ]; then
+			msg 'NC' "\nSincronizzazione CONTENUTI direcotry \"${1}\" nella directory \"${2}\""
+		else
+			msg 'NC' "\nSincronizzazione INTERA direcotry \"${1}\" nella directory \"${2}\""
+		fi
 	else
-		msg 'NC' "\nSincronizzazione INTERA direcotry \"${1}\" nella directory \"${2}\""
+		msg 'NC' "\nSincronizzazione FILE \"${1}\" nella directory \"${2}\""
 	fi
 
 	if [ "${ask}" == true ] && ! get_response 'Y' "Continuare?"; then
@@ -257,6 +269,8 @@ function sync_operation {
 	fi
 }
 
+# ${1} -> sorgente
+# ${2} -> destinazione
 function archive {
 	msg 'NC' "\nArchiviazione directory \"${1}\" nella directory \"${2}\"\nAl termine verrà eliminata la directory sorgente"
 	if [ "${ask}" == true ] && ! get_response 'Y' "Continuare?"; then
@@ -339,17 +353,33 @@ function lazy_init_vars {
 	[ "${log_on_file}" == true ] && log_file="`mktemp "${tmp_dir}/${script_name%.*}.XXXXXX"`"
 }
 
+function is_dir_or_file {
+	if [ -d "${1}" ] || [ -f "${1}" ]; then
+		return ${EXIT_SUCCESS}
+	else
+		return ${EXIT_FAILURE}
+	fi
+}
+
 function validation_check {
 	local file_error=false;
 
 	for k in "${!source_dest_backup[@]}"; do
-		! [ -d "${k}" ] && msg 'Y' "Attenzione: il file \"${k}\" non esiste." && file_error=true
-		! [ -d "${source_dest_backup["${k}"]}" ] && msg 'Y' "Attenzione: il file \"${source_dest_backup["${k}"]}\" non esiste." && file_error=true
+		if ! is_dir_or_file "${k}"; then
+			msg 'Y' "Attenzione: il file \"${k}\" non è una directory o un file regolare." && file_error=true
+		fi
+		if ! is_dir_or_file "${source_dest_backup["${k}"]}"; then
+			msg 'Y' "Attenzione: il file \"${source_dest_backup["${k}"]}\" non è una directory o un file regolare." && file_error=true
+		fi
 	done
 
 	for k in "${!source_dest_archive[@]}"; do
-		! [ -d "${k}" ] && msg 'Y' "Attenzione: il file \"${k}\" non esiste." && file_error=true
-		! [ -d "${source_dest_archive["${k}"]}" ] && msg 'Y' "Attenzione: il file \"${source_dest_archive["${k}"]}\" non esiste." && file_error=true
+		if ! is_dir_or_file "${k}"; then
+			msg 'Y' "Attenzione: il file \"${k}\" non è una directory o un file regolare." && file_error=true
+		fi
+		if ! is_dir_or_file "${source_dest_archive["${k}"]}"; then
+			msg 'Y' "Attenzione: il file \"${source_dest_archive["${k}"]}\" non è una directory o un file regolare." && file_error=true
+		fi
 	done
 
 	[ "${file_error}" == true ] && return ${EXIT_FAILURE} || return ${EXIT_SUCCESS}
