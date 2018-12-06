@@ -50,13 +50,12 @@ declare ramdisk_mount_point
 
 # Azioni possibili
 declare ask=true
-declare create_trash_op=false
 declare create_ramdisk_op=false
 declare setup_ramdisk_op=false
 declare unload_script_op=false
 declare create_link_Download_op=false
 declare check_deps_op=true
-declare create_links_op=false
+declare create_trash_op=false
 
 
 function log {
@@ -164,6 +163,8 @@ function create_and_launch_plist {
 			msg 'Y' "Il file non è stato sovrascitto."
 			return ${EXIT_FAILURE}
 		fi
+		# Unload vecchio file *.plist
+		launchctl unload -w "${plist_file}" &> "${DEV_NULL}"
 	fi
 
 	# Creazione file plist nella directory di sistema
@@ -179,6 +180,8 @@ function create_and_launch_plist {
 	    <key>InitGroups</key>
 	    <true/>
 
+	    <key>RunAtLoad</key>
+	    <true/>
 	    <key>KeepAlive</key>
 	    <false/>
 		<key>LaunchOnlyOnce</key>
@@ -193,6 +196,7 @@ function create_and_launch_plist {
 		<key>ProgramArguments</key>
 		<array>
 			<string>${scripts_sys_path}/${script_name}</string>
+			<string>--create-ramdisk</string>
 			<string>--ramdisk-mount-point</string>
 			<string>${ramdisk_mount_point}</string>
 			<string>--ramdisk-name</string>
@@ -200,15 +204,12 @@ function create_and_launch_plist {
 			<string>--ramdisk-size</string>
 			<string>${ramdisk_size}</string>
 			<string>--not-ask-permission</string>
-			<string>--skip-deps-check</string>
-			<string>--create-link-in-Download</string>
-			<string>--create-trash</string>
-			<string>--create-sym-links</string>
-			<string>--create-ramdisk</string>
-			$(
+			<string>--skip-deps-check</string>$(
+			[[ "${create_link_Download_op}" == true ]] && printf '\t\t\t<string>%s</string>\n' '--create-link-in-Download'
+			[[ "${create_trash_op}" == true ]] && printf '\t\t\t<string>%s</string>\n' '--create-trash'
 			if [[ "${#links_to_create[@]}" -gt 0 ]]; then
 				local IFS=':'
-				printf '<string>%s</string>\n' '--filenames-to-create'
+				printf '\t\t\t<string>%s</string>\n' '--filenames-to-create'
 				printf '\t\t\t<string>%s</string>\n' "${links_to_create[*]}"
 			fi
 			)
@@ -245,7 +246,7 @@ function create_mount_point {
 			return ${EXIT_FAILURE}
 		fi
 
-		mkdir "${1}" || return ${EXIT_FAILURE}
+		mkdir -p "${1}" || return ${EXIT_FAILURE}
 	fi
 
 	return ${EXIT_SUCCESS}
@@ -281,7 +282,7 @@ function create_ramdisk {
 		return ${EXIT_RAMDISK_SYNTAX_ERR}
 	fi
 
-	create_mount_point "${3}"
+	create_mount_point "${3}" || return ${EXIT_FAILURE}
 
 	local disk="$(basename $(hdiutil attach -nomount "ram://$((${1} * 1024 * 2))") )"
 	if [[ ${?} -ne ${EXIT_SUCCESS} ]]; then
@@ -315,6 +316,11 @@ function create_ramdisk {
 }
 
 function create_links {
+	if ! [[ -d "${ramdisk_mount_point}" ]]; then
+		msg 'Y' "Il punto di mount (${ramdisk_mount_point}) sembra non esistere."
+		return ${EXIT_FAILURE}
+	fi
+
 	local linkdir='Links'
 	for file in "${links_to_create[@]}"; do
 		# Creo la directory nel ramdisk
@@ -363,9 +369,6 @@ function usage {
 
 		/directory/sorgente_uno:/directory/destinazione_uno
 		/directory/sorgente_due:/directory/destinazione_due
-
-	-l | --create-sym-links
-		Crea i links simbolici dai files specificati attraverso il flag -f.
 
 	-m directory | --ramdisk-mount-point directory
 		Specifica la directory nella quale verrà creato e montato il ramdisk.
@@ -420,11 +423,6 @@ function parse_input {
 				return ${EXIT_FAILURE}
 				;;
 
-			-l | --create-sym-links )
-				create_links_op=true
-				shift
-				;;
-
 			-m | --ramdisk-mount-point )
 				shift
 				ramdisk_mount_point="${1}"
@@ -476,9 +474,16 @@ function parse_input {
 	done
 }
 
+function validate_input {
+	if [[ "${create_ramdisk_op}" == true && "${setup_ramdisk_op}" == true ]]; then
+		msg 'R' "ERRORE: Non è possibile specificare contemporaneamente i flags -c e -su."
+		return ${EXIT_FAILURE}
+	fi
+}
+
 function lazy_init_tool_vars {
 	script_name="`basename "${0}"`"
- 	script_filename="`realpath -e "${0}"`"
+ 	script_filename="${0}"
 }
 
 function create_trash {
@@ -492,6 +497,8 @@ function create_trash {
 
 # Utilizzare questi flags per creare il file *.plist, lo script in una 
 # posizione di sistema e caricare lo script all'avvio del sistema
+# -t
+# -d
 # -f "/Library/Caches:/Library/Logs:/System/Library/Caches:/System/Library/CacheDelete:/private/tmp:/private/var/log:/private/var/tmp:/Users/alfredo/Library/Logs:/Users/alfredo/Library/Caches:/Users/alfredo/.cache"
 # -s 1000
 # -m /Volumes/Ramdisk
@@ -502,7 +509,7 @@ function main {
 	# Controllo dipendenze
 	if [[ "${check_deps_op}" == true ]]; then
 		check_os || return ${EXIT_FAILURE}
-		check_tools printf open read test basename realpath mv rm ln cp tee hdiutil diskutil newfs_apfs mkdir || return ${EXIT_FAILURE}
+		check_tools printf open read test basename mv rm ln cp tee hdiutil diskutil newfs_apfs mkdir || return ${EXIT_FAILURE}
 	fi
 
 	# Inizializzazione variabili
@@ -510,29 +517,29 @@ function main {
 
 	# Parsing input utente
 	parse_input "${@}" || return ${EXIT_FAILURE}
+	validate_input || return ${EXIT_FAILURE}
 
 	# Creazione ramdisk
 	if [[ "${create_ramdisk_op}" == true ]]; then
 		create_ramdisk ${ramdisk_size} "${ramdisk_name}" "${ramdisk_mount_point}" || return ${?}
-	fi
 
-	# Creazione links all'interno del ramdisk
-	if [[ "${create_links_op}" == true ]]; then
-		create_links || return ${?}
-	fi
+		# Creazione links all'interno del ramdisk
+		if [[ "${#links_to_create[@]}" -gt 0 ]]; then
+			create_links || return ${?}
+		fi
 
-	# Creazione directory Trash all'interno del ramdisk
-	if [[ "${create_trash_op}" == true ]]; then
-		create_trash || return ${?}
-	fi
+		# Creazione directory Trash all'interno del ramdisk
+		if [[ "${create_trash_op}" == true ]]; then
+			create_trash || return ${?}
+		fi
 
-	# Creazione link del ramdisk all'interno della directory Download
-	if [[ "${create_link_Download_op}" == true ]]; then
-		create_link_Download
-	fi
+		# Creazione link del ramdisk all'interno della directory Download
+		if [[ "${create_link_Download_op}" == true ]]; then
+			create_link_Download
+		fi
 
 	# Setup script e file *.plist per la creazione automatica di un ramdisk ad avvio di sistema
-	if [[ "${setup_ramdisk_op}" == true ]]; then
+	elif [[ "${setup_ramdisk_op}" == true ]]; then
 		check_root || return ${?}
 		setup_ramdisk || return ${?}
 	fi
