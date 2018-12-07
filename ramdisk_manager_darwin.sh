@@ -298,9 +298,8 @@ function create_ramdisk {
 	create_mount_point "${3}" || return ${EXIT_FAILURE}
 
 	local disk="$(basename $(hdiutil attach -nomount "ram://$((${1} * 1024 * 2))") )"
-	if [[ ${?} -ne ${EXIT_SUCCESS} ]]; then
+	if [[ -z "${disk}" ]]; then
 		msg 'R' "ERRORE: hdiutil - creazione disco per il ramdisk"
-		on_create_ramdisk_error "${disk}"
 		return ${EXIT_HDIUTIL_ERR}
 	fi
 
@@ -550,6 +549,12 @@ function main {
 	# Inizializzazione variabili
 	lazy_init_vars
 
+	# Rimozione script e file *.plist per la creazione automatica del ramdisk ad avvio sistema
+	if [[ "${unload_script_op}" == true ]]; then
+		check_root || return ${?}
+		unload_script || return ${EXIT_FAILURE}
+	fi
+
 	# Creazione ramdisk
 	if [[ "${create_ramdisk_op}" == true ]]; then
 		create_ramdisk ${ramdisk_size} "${ramdisk_name}" "${ramdisk_mount_point}" || return ${?}
@@ -577,12 +582,6 @@ function main {
 	elif [[ "${setup_ramdisk_op}" == true ]]; then
 		check_root || return ${?}
 		setup_ramdisk || return ${?}
-	fi
-
-	# Rimozione script e file *.plist per la creazione automatica del ramdisk ad avvio sistema
-	if [[ "${unload_script_op}" == true ]]; then
-		check_root || return ${?}
-		unload_script || return ${EXIT_FAILURE}
 	fi
 
 }
