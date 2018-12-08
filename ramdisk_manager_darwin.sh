@@ -27,6 +27,7 @@ declare -r -i EXIT_DISKUTIL_PART_ERR=3
 declare -r -i EXIT_NEWFSAPFS_ERR=4
 declare -r -i EXIT_DISKUTIL_MOUNT_ERR=5
 declare -r -i EXIT_RAMDISK_SYNTAX_ERR=6
+declare -r -i EXIT_HELP_REQUESTED=7
 
 # Readonly vars
 declare -r LOG='/var/log/ramdisk_manager.log'
@@ -103,7 +104,7 @@ function check_tools {
 }
 
 function check_os {
-	if ! [[ "${OS_V}" == "${OS_MACOS}"* ]]; then
+	if [[ "${OS_V}" != "${OS_MACOS}"* ]]; then
 		msg 'R' "ERRORE: Questo tool può essere lanciato solo da sistemi MacOSX."
 		return ${EXIT_FAILURE}
 	fi
@@ -155,8 +156,8 @@ function create_script {
 }
 
 function create_and_launch_plist {
-	if [[ -z "${username}" ]]; then
-		msg 'R' "ERRORE: Il campo username NON può essere vuoto se si vuole fare il setup per l'avvio automatico del ramdisk.\nUtilizzare il flag -p username."
+	if ! [[ -d "${launch_daemons_sys_path}" ]]; then
+		msg 'R' "ERRORE: La directory di sistema ${launch_daemons_sys_path} non esiste."
 		return ${EXIT_FAILURE}
 	fi
 
@@ -202,12 +203,9 @@ function create_and_launch_plist {
 		<key>ProgramArguments</key>
 		<array>
 			<string>${scripts_sys_path}/${script_name}</string>
-			<string>--create-ramdisk</string>
-			<string>--ramdisk-mount-point</string>
-			<string>${ramdisk_mount_point}</string>
-			<string>--ramdisk-name</string>
+			<string>--create-ramdisk</string>			
 			<string>${ramdisk_name}</string>
-			<string>--ramdisk-size</string>
+			<string>${ramdisk_mount_point}</string>
 			<string>${ramdisk_size}</string>
 			<string>--not-ask-permission</string>
 			<string>--skip-deps-check</string>
@@ -251,20 +249,6 @@ function setup_ramdisk {
 	create_and_launch_plist
 }
 
-function create_mount_point {
-	if ! [[ -d "${1}" ]]; then
-		msg 'NC' "Creazione directory su cui montare il ramdisk - \"${1}\""
-		if [[ "${ask}" == true ]] && ! get_response 'Y' "Continuare?"; then
-			msg 'Y' "La crezione del punto di mount non è stata effettuata"
-			return ${EXIT_FAILURE}
-		fi
-
-		mkdir -p "${1}" || return ${EXIT_FAILURE}
-	fi
-
-	return ${EXIT_SUCCESS}
-}
-
 # ${1} -> disco da smontare ed espellere (e.g. disk7)
 function on_create_ramdisk_error {
 	msg 'NC' "Rimozione disco \"${1}\""
@@ -280,24 +264,11 @@ function on_create_ramdisk_error {
 	return ${EXIT_SUCCESS}
 }
 
-# ${1} -> size ramdisk in MB
-# ${2} -> ramdisk name
-# ${3} -> ramdisk mount point
+# ${1} -> ramdisk name
+# ${2} -> ramdisk mount point
+# ${3} -> ramdisk size in MB
 function create_ramdisk {
-	if [[ ${1} -le 0 ]]; then
-		msg 'R' "ERRORE: La dimensione del ramdisk non può essere <= 0"
-		return ${EXIT_RAMDISK_SYNTAX_ERR}
-	elif [[ -z "${2}" ]]; then
-		msg 'R' "ERRORE: Il nome del ramdisk non può essere vuoto"
-		return ${EXIT_RAMDISK_SYNTAX_ERR}
-	elif [[ -z "${3}" ]]; then
-		msg 'R' "ERRORE: Il punto di mount del ramdisk non può essere vuoto"
-		return ${EXIT_RAMDISK_SYNTAX_ERR}
-	fi
-
-	create_mount_point "${3}" || return ${EXIT_FAILURE}
-
-	local disk="$(basename $(hdiutil attach -nomount "ram://$((${1} * 1024 * 2))") )"
+	local disk="$(basename $(hdiutil attach -nomount "ram://$((${3} * 1024 * 2))") )"
 	if [[ -z "${disk}" ]]; then
 		msg 'R' "ERRORE: hdiutil - creazione disco per il ramdisk"
 		return ${EXIT_HDIUTIL_ERR}
@@ -310,14 +281,14 @@ function create_ramdisk {
 		return ${EXIT_DISKUTIL_PART_ERR}
 	fi
 
-    newfs_apfs -v "${2}" "${disk}s1"
+    newfs_apfs -v "${1}" "${disk}s1"
     if [[ ${?} -ne ${EXIT_SUCCESS} ]]; then
 		msg 'R' "ERRORE: newfs_apfs - creazione APFS sul disco ${disk}s1"
 		on_create_ramdisk_error "${disk}"
 		return ${EXIT_NEWFSAPFS_ERR}
 	fi
 
-    diskutil mount -mountPoint "${3}" "${2}"
+    diskutil mount -mountPoint "${2}" "${1}"
     if [[ ${?} -ne ${EXIT_SUCCESS} ]]; then
 		msg 'R' "ERRORE: diskutil - creazione punto di mount ramdisk"
 		on_create_ramdisk_error "${disk}"
@@ -328,11 +299,6 @@ function create_ramdisk {
 }
 
 function create_links {
-	if ! [[ -d "${ramdisk_mount_point}" ]]; then
-		msg 'Y' "Il punto di mount (${ramdisk_mount_point}) sembra non esistere."
-		return ${EXIT_FAILURE}
-	fi
-
 	local linkdir='Links'
 	for file in "${links_to_create[@]}"; do
 		# Creo la directory nel ramdisk
@@ -344,17 +310,9 @@ function create_links {
 			rm -rf "${file}"
 			ln -s "${ramdisk_mount_point}/${linkdir}/${file}" "${file}"
 		fi
-
 	done
-}
 
-function create_link_Download {
-	if [[ -d "${ramdisk_mount_point}" ]]; then
-		ln -s "${ramdisk_mount_point}" "${download_path}"
-	else
-		msg 'R' "ERRORE: Il punto di mount non esiste quindi non è possibile creare il link simbolico."
-		return ${EXIT_FAILURE}
-	fi
+	return ${EXIT_SUCCESS}
 }
 
 function usage {
@@ -368,8 +326,9 @@ function usage {
 
 `printf "${BD}# Options${NC}"`
 
-	-c | --create-ramdisk
-		Crea il ramdisk utilizzando le informazioni specificate attraverso i flags -f, -m, -n, -s.
+	-c ramdisk_name ramdisk_mount_point ramdisk_size_MB | --create-ramdisk ramdisk_name ramdisk_mount_point ramdisk_size_MB
+		Inizializza un ramdisk creando un disco di nome ramdisk_name di dimensione ramdisk_size_MB che
+		verrà montato in ramdisk_mount_point.
 
 	-d | --create-link-to-Download
 		Crea un link nella direcotry download che punta al punto di mount del ramdisk creato.
@@ -382,12 +341,6 @@ function usage {
 		/directory/sorgente_uno:/directory/destinazione_uno
 		/directory/sorgente_due:/directory/destinazione_due
 
-	-m directory | --ramdisk-mount-point directory
-		Specifica la directory nella quale verrà creato e montato il ramdisk.
-
-	-n ramdisk_name | --ramdisk-name ramdisk_name
-		Specifica il nome del ramdisk che dovrà essere creato.
-
 	-nask | --not-ask-permission
 		Non chiede il permesso dell'utente prima di eseguire un'operazione.
 
@@ -395,15 +348,13 @@ function usage {
 		Specifica lo username che si vuole utilizzare.
 		Questa opzione è utile per impostare correttamente i path che vengono usati con il flag -d e -su.
 
-	-s size_MB | --ramdisk-size size_MB
-		Specifica la dimensione del ramdisk in Mega Bytes.
-
 	-sd | --skip-deps-check
 		Disabilitazione controllo dipendenze tools ausiliari.
 
-	-su | --setup-ramdisk-at-boot
-		Inizializza i files necessari per la creazione del ramdisk all'avvio del sistema utilizzando 
-		le informazioni specificate attraverso i flags -f, -m, -n, -s.
+	-su ramdisk_name ramdisk_mount_point ramdisk_size_MB | --setup-ramdisk-at-boot ramdisk_name ramdisk_mount_point ramdisk_size_MB
+		Inizializza i files necessari per la creazione del ramdisk all'avvio del sistema.
+		Il ramdisk verrà inizializzato creando un disco di nome ramdisk_name di dimensione ramdisk_size_MB che
+		verrà montato in ramdisk_mount_point.
 
 	-t | --create-trash
 		Crea la directory "Trash" all'interno della directory dove è stato montato il ramdisk
@@ -418,6 +369,12 @@ function parse_input {
 	while [[ ${#} -gt 0 ]]; do
 		case "${1}" in
 			-c | --create-ramdisk )
+				shift
+				ramdisk_name="${1}"
+				shift
+				ramdisk_mount_point="${1}"
+				shift
+				ramdisk_size="${1}"
 				create_ramdisk_op=true
 				shift
 				;;
@@ -436,19 +393,7 @@ function parse_input {
 
 			-[hH] | --help | --HELP )
 				usage
-				return ${EXIT_FAILURE}
-				;;
-
-			-m | --ramdisk-mount-point )
-				shift
-				ramdisk_mount_point="${1}"
-				shift
-				;;
-
-			-n | --ramdisk-name )
-				shift
-				ramdisk_name="${1}"
-				shift
+				return ${EXIT_HELP_REQUESTED}
 				;;
 
 			-nask | --not-ask-permission )
@@ -462,18 +407,18 @@ function parse_input {
 				shift
 				;;
 
-			-s | --ramdisk-size )
-				shift
-				ramdisk_size=${1}
-				shift
-				;;
-
 			-sd | --skip-deps-check )
 				check_deps_op=false
 				shift
 				;;
 
 			-su | --setup-ramdisk-at-boot )
+				shift
+				ramdisk_name="${1}"
+				shift
+				ramdisk_mount_point="${1}"
+				shift
+				ramdisk_size="${1}"
 				setup_ramdisk_op=true;
 				shift
 				;;
@@ -494,6 +439,8 @@ function parse_input {
 				;;
 		esac
 	done
+
+	return ${EXIT_SUCCESS}
 }
 
 function validate_input {
@@ -501,6 +448,31 @@ function validate_input {
 		msg 'R' "ERRORE: Non è possibile specificare contemporaneamente i flags -c e -su."
 		return ${EXIT_FAILURE}
 	fi
+
+	if [[ ${ramdisk_size} -le 0 ]]; then
+		msg 'R' "ERRORE: La dimensione del ramdisk non può essere <= 0"
+		return ${EXIT_RAMDISK_SYNTAX_ERR}
+	elif [[ -z "${ramdisk_name}" ]]; then
+		msg 'R' "ERRORE: Il nome del ramdisk non può essere vuoto"
+		return ${EXIT_RAMDISK_SYNTAX_ERR}
+	elif [[ -z "${ramdisk_mount_point}" ]]; then
+		msg 'R' "ERRORE: Il punto di mount del ramdisk non può essere vuoto"
+		return ${EXIT_RAMDISK_SYNTAX_ERR}
+	elif ! [[ -d "${ramdisk_mount_point}" ]]; then
+		msg 'NC' "Creazione directory su cui montare il ramdisk - \"${ramdisk_mount_point}\""
+		if [[ "${ask}" == true ]] && ! get_response 'Y' "Continuare?"; then
+			msg 'Y' "La crezione del punto di mount non è stata effettuata"
+			return ${EXIT_FAILURE}
+		fi
+		mkdir -p "${ramdisk_mount_point}" || return ${EXIT_FAILURE}
+	fi
+
+	if [[ "${create_link_Download_op}" == true || "${setup_ramdisk_op}" == true ]] && [[ -z "${username}" ]]; then		
+		msg 'R' "ERRORE: Il campo username NON può essere vuoto se si vuole creare un link nella directory Download o creare il ramdisk all'avvio del sistema.\nUtilizzare il flag -p username."
+		return ${EXIT_FAILURE}
+	fi
+
+	return ${EXIT_SUCCESS}
 }
 
 function lazy_init_tool_vars {
@@ -513,24 +485,24 @@ function lazy_init_vars {
 	daemon_name="`printf "${daemon_name}" "${username}"`"
 }
 
+function create_link_Download {
+	ln -s "${ramdisk_mount_point}" "${download_path}" || return ${EXIT_FAILURE}
+	return ${EXIT_SUCCESS}
+}
+
 function create_trash {
 	local dirname='Trash'
-	if mkdir "${ramdisk_mount_point}/${dirname}"; then
-		return ${EXIT_SUCCESS}
-	else
-		return ${EXIT_FAILURE}
-	fi
+	mkdir "${ramdisk_mount_point}/${dirname}" || return ${EXIT_FAILURE}
+	return ${EXIT_SUCCESS}
 }
 
 # Utilizzare questi flags per creare il file *.plist, lo script in una 
 # posizione di sistema e caricare lo script all'avvio del sistema
 # -t
 # -d
+# -p alfredo
 # -f "/Library/Caches:/Library/Logs:/System/Library/Caches:/System/Library/CacheDelete:/private/tmp:/private/var/log:/private/var/tmp:/Users/alfredo/Library/Logs:/Users/alfredo/Library/Caches:/Users/alfredo/.cache"
-# -s 1000
-# -m /Volumes/Ramdisk
-# -n Ramdisk
-# -su
+# -su Ramdisk /Volumes/Ramdisk 1000
 function main {
 
 	# Controllo dipendenze
@@ -543,8 +515,9 @@ function main {
 	lazy_init_tool_vars
 
 	# Parsing input utente
-	parse_input "${@}" || return ${EXIT_FAILURE}
-	validate_input || return ${EXIT_FAILURE}
+	parse_input "${@}" || return ${?}
+	# Validazione input
+	validate_input || return ${?}
 
 	# Inizializzazione variabili
 	lazy_init_vars
@@ -552,12 +525,12 @@ function main {
 	# Rimozione script e file *.plist per la creazione automatica del ramdisk ad avvio sistema
 	if [[ "${unload_script_op}" == true ]]; then
 		check_root || return ${?}
-		unload_script || return ${EXIT_FAILURE}
+		unload_script || return ${?}
 	fi
 
 	# Creazione ramdisk
 	if [[ "${create_ramdisk_op}" == true ]]; then
-		create_ramdisk ${ramdisk_size} "${ramdisk_name}" "${ramdisk_mount_point}" || return ${?}
+		create_ramdisk "${ramdisk_name}" "${ramdisk_mount_point}" ${ramdisk_size} || return ${?}
 
 		# Creazione links all'interno del ramdisk
 		if [[ "${#links_to_create[@]}" -gt 0 ]]; then
@@ -571,11 +544,7 @@ function main {
 
 		# Creazione link del ramdisk all'interno della directory Download
 		if [[ "${create_link_Download_op}" == true ]]; then
-			if [[ -z "${username}" ]]; then
-				msg 'Y' "Il campo username NON può essere vuoto se si vuole creare un link nella directory Download.\nUtilizzare il flag -p username."
-			else
-				create_link_Download
-			fi
+			create_link_Download || return ${?}
 		fi
 
 	# Setup script e file *.plist per la creazione automatica di un ramdisk ad avvio di sistema
@@ -583,6 +552,8 @@ function main {
 		check_root || return ${?}
 		setup_ramdisk || return ${?}
 	fi
+
+	return ${EXIT_SUCCESS}
 
 }
 
