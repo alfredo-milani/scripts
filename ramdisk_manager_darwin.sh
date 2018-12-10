@@ -54,7 +54,7 @@ declare ramdisk_mount_point
 declare ask=true
 declare create_ramdisk_op=false
 declare setup_ramdisk_op=false
-declare unload_script_op=false
+declare unload_service_op=false
 declare create_link_Download_op=false
 declare check_deps_op=true
 declare create_trash_op=false
@@ -236,12 +236,20 @@ EOF
 }
 
 function unload_script {
+	# Eliminazione script
+	rm -f "${scripts_sys_path}/${script_name}"
+}
+
+function unload_plist {
 	# Disabilitazione caricamento automatico
 	launchctl unload -w "${launch_daemons_sys_path}/${daemon_name}" &> "${DEV_NULL}" || return ${EXIT_FAILURE}
 	# Rimozione file *.plist
 	rm -f "${launch_daemons_sys_path}/${daemon_name}"
-	# Eliminazione script
-	rm -f "${scripts_sys_path}/${script_name}"
+}
+
+function unload_service {
+	unload_script
+	unload_plist
 }
 
 function setup_ramdisk {
@@ -301,12 +309,18 @@ function create_ramdisk {
 function create_links {
 	local linkdir='Links'
 	for file in "${links_to_create[@]}"; do
-		# Creo la directory nel ramdisk
+		# Creazione di links di sole directory
+		if ! [[ -d "${file}"  ]]; then
+			msg 'Y' "Il file \"${file}\" non è una directory e non sarà considerato."
+			continue
+		fi
+
+		# Creo il filename nel ramdisk
 		mkdir -p "${ramdisk_mount_point}/${linkdir}/${file}"
 
 		# Controllo se il file da sostituire con un link sia già un link e 
 		# in caso negativo elimino la directory e creo il link
-		if ! [[ -L "${file}" && -d "${file}" ]]; then
+		if ! [[ -L "${file}" ]]; then
 			rm -rf "${file}"
 			ln -s "${ramdisk_mount_point}/${linkdir}/${file}" "${file}"
 		fi
@@ -429,7 +443,7 @@ function parse_input {
 				;;
 
 			-u | --unload-script )
-				unload_script_op=true
+				unload_service_op=true
 				shift
 				;;
 
@@ -508,7 +522,7 @@ function main {
 	# Controllo dipendenze
 	if [[ "${check_deps_op}" == true ]]; then
 		check_os || return ${EXIT_FAILURE}
-		check_tools printf open read test basename mv rm ln cp tee hdiutil diskutil newfs_apfs mkdir || return ${EXIT_FAILURE}
+		check_tools printf open read test touch basename mv rm ln cp tee hdiutil diskutil newfs_apfs mkdir || return ${EXIT_FAILURE}
 	fi
 
 	# Inizializzazione variabili del tool
@@ -523,9 +537,9 @@ function main {
 	lazy_init_vars
 
 	# Rimozione script e file *.plist per la creazione automatica del ramdisk ad avvio sistema
-	if [[ "${unload_script_op}" == true ]]; then
+	if [[ "${unload_service_op}" == true ]]; then
 		check_root || return ${?}
-		unload_script || return ${?}
+		unload_service || return ${?}
 	fi
 
 	# Creazione ramdisk
