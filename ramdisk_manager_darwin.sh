@@ -2,7 +2,7 @@
 # ============================================================================
 # Titolo: manage_ramdisk.sh
 # Descrizione: Provvede all'inizializzazione e gestione di un ramdisk
-# Autore: alfredo (alfredo.milani.94@gmail.com)
+# Autore: Alfredo Milani (alfredo.milani.94@gmail.com)
 # Data: Gio 20 Set 2018 12:40:51 CEST
 # Licenza: MIT License
 # Versione: 1.0.0
@@ -60,6 +60,11 @@ declare check_deps_op=true
 declare create_trash_op=false
 
 
+# Versione cutom del tool realpath
+function rp_cstm {
+    [[ "${1}" = /* ]] && echo "${1}" || echo "${PWD}/${1#./}"
+}
+
 function log {
 	printf "${1}\n" >> "${LOG}"
 }
@@ -111,7 +116,7 @@ function check_os {
 }
 
 function check_root {
-	local current_user=`id -u`
+	local current_user=$(id -u)
 	local root_user=0
 
     if [[ ${current_user} -ne ${root_user} ]]; then
@@ -174,8 +179,8 @@ function create_and_launch_plist {
 		launchctl unload -w "${plist_file}" &> "${DEV_NULL}"
 	fi
 
-	# Creazione file plist nella directory di sistema
-	tee <<EOF "${plist_file}" 1> "${DEV_NULL}"
+	local plist_file_content
+	read -r -d '' plist_file_content << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -228,6 +233,8 @@ function create_and_launch_plist {
 	</dict>
 </plist>
 EOF
+	# Creazione file plist nella directory di sistema
+	tee <<< "${plist_file_content}" "${plist_file}" 1> "${DEV_NULL}"
 
 	# Cambio proprietario e gruppo
 	chown root:wheel "${plist_file}"
@@ -309,19 +316,13 @@ function create_ramdisk {
 function create_links {
 	local linkdir='Links'
 	for file in "${links_to_create[@]}"; do
-		# Creazione di links di sole directory
-		if ! [[ -d "${file}"  ]]; then
-			msg 'Y' "Il file \"${file}\" non è una directory e non sarà considerato."
-			continue
-		fi
-
-		# Creo il filename nel ramdisk
+		# Creo la directory nel ramdisk
 		mkdir -p "${ramdisk_mount_point}/${linkdir}/${file}"
 
 		# Controllo se il file da sostituire con un link sia già un link e 
 		# in caso negativo elimino la directory e creo il link
-		if ! [[ -L "${file}" ]]; then
-			rm -rf "${file}"
+		if ! [[ -e "${file}" && "$(rp_cstm "${file}")" == "${ramdisk_mount_point}/${linkdir}/${file}" ]]; then
+		 	rm -rf "${file}"
 			ln -s "${ramdisk_mount_point}/${linkdir}/${file}" "${file}"
 		fi
 	done
@@ -330,45 +331,45 @@ function create_links {
 }
 
 function usage {
-	cat <<EOF
-`printf "${BD}# Utilizzo${NC}"`
+	local usage
+	read -r -d '' usage << EOF
+${BD}### Utilizzo${NC}
 	
 	${script_name} -[options]
 
 	Questo script può essere usato per configurare un ramdisk creato in modo 
 	automatico all'avvio del sistema.
 
-`printf "${BD}# Options${NC}"`
+${BD}### Options${NC}
 
-	-c ramdisk_name ramdisk_mount_point ramdisk_size_MB | --create-ramdisk ramdisk_name ramdisk_mount_point ramdisk_size_MB
-		Inizializza un ramdisk creando un disco di nome ramdisk_name di dimensione ramdisk_size_MB che
-		verrà montato in ramdisk_mount_point.
+	-c ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC} | --create-ramdisk ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC}
+		Inizializza un ramdisk creando un disco di nome ${U}ramdisk_name${NC} di dimensione ${U}ramdisk_size_MB${NC} che
+		verrà montato in ${U}ramdisk_mount_point${NC}.
 
 	-d | --create-link-to-Download
 		Crea un link nella direcotry download che punta al punto di mount del ramdisk creato.
 
-	-f file_list | --filenames-to-create file_list
+	-f ${U}file_list${NC} | --filenames-to-create ${U}file_list${NC}
 		Una volta creato il ramdisk elimina le directory specificate e crea un link
 		simbolico delle stesse all'interno del ramdisk.
-		Il parametro deve avere il seguente formato:
+		Il parametro ${U}file_list${NC} deve avere il seguente formato:
 
-		/directory/sorgente_uno:/directory/destinazione_uno
-		/directory/sorgente_due:/directory/destinazione_due
+		"/path_uno/directory_uno:/path_due/directory_due/:/path_tre/directory_tre"
 
 	-nask | --not-ask-permission
 		Non chiede il permesso dell'utente prima di eseguire un'operazione.
 
-	-p | --set-user-profile
+	-p ${U}username${NC} | --set-user-profile ${U}username${NC}
 		Specifica lo username che si vuole utilizzare.
 		Questa opzione è utile per impostare correttamente i path che vengono usati con il flag -d e -su.
 
 	-sd | --skip-deps-check
 		Disabilitazione controllo dipendenze tools ausiliari.
 
-	-su ramdisk_name ramdisk_mount_point ramdisk_size_MB | --setup-ramdisk-at-boot ramdisk_name ramdisk_mount_point ramdisk_size_MB
+	-su ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC} | --setup-ramdisk-at-boot ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC}
 		Inizializza i files necessari per la creazione del ramdisk all'avvio del sistema.
-		Il ramdisk verrà inizializzato creando un disco di nome ramdisk_name di dimensione ramdisk_size_MB che
-		verrà montato in ramdisk_mount_point.
+		Il ramdisk verrà inizializzato creando un disco di nome ${U}ramdisk_name${NC} di dimensione ${U}ramdisk_size_MB${NC} che
+		verrà montato in ${U}ramdisk_mount_point${NC}.
 
 	-t | --create-trash
 		Crea la directory "Trash" all'interno della directory dove è stato montato il ramdisk
@@ -376,7 +377,26 @@ function usage {
 	-u | --unload-script
 		Permette di non caricare più lo script all'avvio del sistema.
 
+${BD}### Esempio di utilizzo${NC}
+
+	$ sudo ${script_name} -t -d -p user -f "/Library/Caches:/Library/Logs:/Users/alfredo/Library/Caches" -su Ramdisk /Volumes/Ramdisk 1000
+
+		Crea un file *.plist nella directory ${launch_daemons_sys_path} e copia questo script nella posizione ${scripts_sys_path}.
+		Così facendo verrà creato un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB, inoltre verrà
+		creato un link simbolico del punto di mount nella directory /Users/user/Download/ e verrà creato una directory di nome "Trash"
+		all'interno del Ramdisk.
+		Le directory /Library/Caches, /Library/Logs e /Users/alfredo/Library/Caches saranno sostituite con dei link simbolici che puntano a
+		directories all'interno del ramdisk, quindi in questo caso saranno eliminate le directory /Library/Caches, /Library/Logs e
+		/Users/alfredo/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/Links/Library/Caches, /Volumes/Ramdisk/Links/Library/Logs e
+		/Volumes/Ramdisk/Links/Users/alfredo/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/Links/
+		nella posizione di origine (specificate dal flag -f).
+
+	$ ${script_name} -c Ramdisk /Volumes/Ramdisk 1000
+
+		Crea un un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB.
 EOF
+
+	printf "${usage}\n"
 }
 
 function parse_input {
@@ -458,11 +478,13 @@ function parse_input {
 }
 
 function validate_input {
+	# Non possono essere specificate entrambi i flags contemporaneamente
 	if [[ "${create_ramdisk_op}" == true && "${setup_ramdisk_op}" == true ]]; then
 		msg 'R' "ERRORE: Non è possibile specificare contemporaneamente i flags -c e -su."
 		return ${EXIT_FAILURE}
 	fi
 
+	# Informazioni necessarie sia per creare un ramdisk che per il setup all'avvio del sistema
 	if [[ ${ramdisk_size} -le 0 ]]; then
 		msg 'R' "ERRORE: La dimensione del ramdisk non può essere <= 0"
 		return ${EXIT_RAMDISK_SYNTAX_ERR}
@@ -472,7 +494,8 @@ function validate_input {
 	elif [[ -z "${ramdisk_mount_point}" ]]; then
 		msg 'R' "ERRORE: Il punto di mount del ramdisk non può essere vuoto"
 		return ${EXIT_RAMDISK_SYNTAX_ERR}
-	elif ! [[ -d "${ramdisk_mount_point}" ]]; then
+
+	elif [[ "${create_ramdisk_op}" == true && ! -d "${ramdisk_mount_point}" ]]; then
 		msg 'NC' "Creazione directory su cui montare il ramdisk - \"${ramdisk_mount_point}\""
 		if [[ "${ask}" == true ]] && ! get_response 'Y' "Continuare?"; then
 			msg 'Y' "La crezione del punto di mount non è stata effettuata"
@@ -481,6 +504,7 @@ function validate_input {
 		mkdir -p "${ramdisk_mount_point}" || return ${EXIT_FAILURE}
 	fi
 
+	# Necessario specificare lo username per risolvere correttamente i paths
 	if [[ "${create_link_Download_op}" == true || "${setup_ramdisk_op}" == true ]] && [[ -z "${username}" ]]; then		
 		msg 'R' "ERRORE: Il campo username NON può essere vuoto se si vuole creare un link nella directory Download o creare il ramdisk all'avvio del sistema.\nUtilizzare il flag -p username."
 		return ${EXIT_FAILURE}
@@ -490,24 +514,36 @@ function validate_input {
 }
 
 function lazy_init_tool_vars {
-	script_name="`basename "${0}"`"
+	script_name="$(basename "${0}")"
  	script_filename="${0}"
 }
 
 function lazy_init_vars {
-	download_path="`printf "${download_path}" "${username}"`"
-	daemon_name="`printf "${daemon_name}" "${username}"`"
+	download_path="$(printf "${download_path}" "${username}")"
+	daemon_name="$(printf "${daemon_name}" "${username}")"
 }
 
 function create_link_Download {
-	ln -s "${ramdisk_mount_point}" "${download_path}" || return ${EXIT_FAILURE}
+	ln -s "${ramdisk_mount_point}" "${download_path}"
 	return ${EXIT_SUCCESS}
 }
 
 function create_trash {
 	local dirname='Trash'
-	mkdir "${ramdisk_mount_point}/${dirname}" || return ${EXIT_FAILURE}
+	mkdir "${ramdisk_mount_point}/${dirname}"
 	return ${EXIT_SUCCESS}
+}
+
+# ${1} -> main return code
+function on_exit {
+	if [[ ${1} -ne ${EXIT_HELP_REQUESTED} ]]; then
+		if [[ ${1} -eq ${EXIT_SUCCESS} ]]; then
+			msg 'G' "Operazioni eseguite con successo."
+		else
+			msg 'R' "Qualcosa è andato storto."
+		fi
+	fi
+	exit ${1}
 }
 
 # Utilizzare questi flags per creare il file *.plist, lo script in una 
@@ -521,8 +557,11 @@ function main {
 
 	# Controllo dipendenze
 	if [[ "${check_deps_op}" == true ]]; then
+		# Controllo se il sistema operativo è MacOSX
 		check_os || return ${EXIT_FAILURE}
-		check_tools printf open read test touch basename mv rm ln cp tee hdiutil diskutil newfs_apfs mkdir || return ${EXIT_FAILURE}
+		# Controllo tools non builtin
+		check_tools open read touch basename mv rm ln \
+		cp tee hdiutil diskutil newfs_apfs mkdir || return ${EXIT_FAILURE}
 	fi
 
 	# Inizializzazione variabili del tool
@@ -572,4 +611,4 @@ function main {
 }
 
 main "${@}"
-exit ${?}
+on_exit ${?}
