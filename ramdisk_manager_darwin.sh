@@ -351,7 +351,7 @@ ${BD}### Options${NC}
 		Crea un link nella direcotry download che punta al punto di mount del ramdisk creato.
 
 	-f ${U}file_list${NC} | --filenames-to-create ${U}file_list${NC}
-		Una volta creato il ramdisk elimina le directory specificate e crea un link
+		Una volta creato il ramdisk elimina le directories specificate e crea un link
 		simbolico delle stesse all'interno del ramdisk.
 		Il parametro ${U}file_list${NC} deve avere il seguente formato:
 
@@ -380,16 +380,16 @@ ${BD}### Options${NC}
 
 ${BD}### Esempio di utilizzo${NC}
 
-	$ sudo ${script_name} -t -d -p user -f "/Library/Caches:/Library/Logs:/Users/alfredo/Library/Caches" -su Ramdisk /Volumes/Ramdisk 1000
+	$ sudo ${script_name} -t -d -p user -f "/Library/Caches:/Library/Logs:/Users/user/Library/Caches" -su Ramdisk /Volumes/Ramdisk 1000
 
 		Crea un file *.plist nella directory ${launch_daemons_sys_path} e copia questo script nella posizione ${scripts_sys_path}.
 		Così facendo verrà creato un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB, inoltre verrà
 		creato un link simbolico del punto di mount nella directory /Users/user/Download/ e verrà creato una directory di nome "Trash"
 		all'interno del Ramdisk.
-		Le directory /Library/Caches, /Library/Logs e /Users/alfredo/Library/Caches saranno sostituite con dei link simbolici che puntano a
-		directories all'interno del ramdisk, quindi in questo caso saranno eliminate le directory /Library/Caches, /Library/Logs e
-		/Users/alfredo/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/Links/Library/Caches, /Volumes/Ramdisk/Links/Library/Logs e
-		/Volumes/Ramdisk/Links/Users/alfredo/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/Links/
+		Le directories /Library/Caches, /Library/Logs e /Users/user/Library/Caches saranno sostituite con dei link simbolici che puntano a
+		directories all'interno del ramdisk, quindi in questo caso saranno eliminate le directories /Library/Caches, /Library/Logs e
+		/Users/user/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/Links/Library/Caches, /Volumes/Ramdisk/Links/Library/Logs e
+		/Volumes/Ramdisk/Links/Users/user/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/Links/
 		nella posizione di origine (specificate dal flag -f).
 
 	$ ${script_name} -c Ramdisk /Volumes/Ramdisk 1000
