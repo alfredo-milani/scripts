@@ -205,7 +205,7 @@ function parse_input {
 				if [ -f "${1}" ]; then
 					config_file="${1}"
 				else
-					echo "Non è possibile utilizzare il file \"${1}\". Verrà utilizzato quello di default: ${config_file}"
+					msg 'BD' "Non è possibile utilizzare il file \"${1}\". Verrà utilizzato quello di default: ${config_file}"
 				fi
 				shift
 				;;
@@ -230,7 +230,7 @@ function parse_input {
 				if [ -d "${1}" ]; then
 					tmp_dir="${1}"
 				else
-					echo "Directory \"${1}\" non esistente. Verrà utilizzata quella di default: ${tmp_dir}"
+					msg 'BD' "Directory \"${1}\" non esistente. Verrà utilizzata quella di default: ${tmp_dir}"
 				fi				
 				shift
 				;;

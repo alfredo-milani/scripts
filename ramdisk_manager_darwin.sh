@@ -28,6 +28,7 @@ declare -r -i EXIT_NEWFSAPFS_ERR=4
 declare -r -i EXIT_DISKUTIL_MOUNT_ERR=5
 declare -r -i EXIT_RAMDISK_SYNTAX_ERR=6
 declare -r -i EXIT_HELP_REQUESTED=7
+declare -r -i EXIT_NO_ARGS=8
 
 # Readonly vars
 declare -r LOG='/var/log/ramdisk_manager.log'
@@ -36,10 +37,10 @@ declare -r OS_V="${OSTYPE}"
 declare -r DEV_NULL='/dev/null'
 
 # Setup's paths
-declare download_path='/Users/%s/Downloads'
-declare daemon_name='it.%s.ramdisk.manager'
 declare -r scripts_sys_path='/Library/Scripts/UtilityScripts'
 declare -r launch_daemons_sys_path='/System/Library/LaunchDaemons'
+declare download_path='/Users/%s/Downloads'
+declare daemon_name='it.%s.ramdisk.manager'
 
 declare username
 declare script_name
@@ -394,12 +395,19 @@ ${BD}### Esempio di utilizzo${NC}
 	$ ${script_name} -c Ramdisk /Volumes/Ramdisk 1000
 
 		Crea un un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB.
+\n
 EOF
 
-	printf "${usage}\n"
+	printf "${usage}"
 }
 
 function parse_input {
+	if [[ ${#} -eq 0 ]]; then
+		msg 'R' "ERRORE: Non è stato specificato alcun argomento."
+		usage
+		return ${EXIT_NO_ARGS}
+	fi
+
 	while [[ ${#} -gt 0 ]]; do
 		case "${1}" in
 			-c | --create-ramdisk )
@@ -536,7 +544,7 @@ function create_trash {
 
 # ${1} -> main return code
 function on_exit {
-	if [[ ${1} -ne ${EXIT_HELP_REQUESTED} ]]; then
+	if [[ ${1} -ne ${EXIT_HELP_REQUESTED} && ${1} -ne ${EXIT_NO_ARGS} ]]; then
 		if [[ ${1} -eq ${EXIT_SUCCESS} ]]; then
 			msg 'G' "Operazioni eseguite con successo."
 		else
