@@ -1,169 +1,265 @@
 #!/usr/local/bin/bash
 
-EXIT_SUCCESS=0
-EXIT_FAILURE=1
-DEV_NULL="/dev/null"
-script_name="`basename "$0"`"
-VOLUMES="/Volumes"
-DEV="/dev"
-TMP="/tmp"
+# Colori
+declare -r R='\033[0;31m' # red
+declare -r Y='\033[1;33m' # yellow
+declare -r G='\033[0;32m' # green
+declare -r DG='\033[1;30m' # dark gray
+declare -r U='\033[4m' # underlined
+declare -r BD='\e[1m' # Bold
+declare -r NC='\033[0m' # No Color
 
-URL_NTFS_3G="https://github.com/osxfuse/osxfuse/releases/download/osxfuse-3.8.2/osxfuse-3.8.2.dmg"
-FILENAME_NTFS_3G="osxfuse-3.8.2.dmg"
-TARGET_INSTALLATION="$VOLUMES/Macintosh HD"
-VOL_NTFS_3G="$VOLUMES/FUSE for macOS"
-PACKAGE_PATH_NTFS_3G="$VOL_NTFS_3G/FUSE for macOS.pkg"
+# Exit status
+declare -r -i EXIT_SUCCESS=0
+declare -r -i EXIT_FAILURE=1
+declare -r -i EXIT_HELP_REQUESTED=2
+declare -r -i EXIT_NO_ARGS=3
+declare -r -i EXIT_MISSING_PERMISSION=4
 
-partitions=()
+# Script's constants
+declare -r DEV_NULL='/dev/null'
+declare -r VOLUMES='/Volumes'
+declare -r DEV='/dev'
+declare -r TMP='/tmp'
+declare script_name
+declare script_filename
 
-function check_root {
-	current_user=`id -u`
-	root_user=0
+declare -r URL_NTFS_3G='https://github.com/osxfuse/osxfuse/releases/download/osxfuse-3.8.2/osxfuse-3.8.2.dmg'
+declare -r FILENAME_NTFS_3G='osxfuse-3.8.2.dmg'
+declare -r TARGET_INSTALLATION="${VOLUMES}/Macintosh HD"
+declare -r VOL_NTFS_3G="${VOLUMES}/FUSE for macOS"
+declare -r PACKAGE_PATH_NTFS_3G="${VOL_NTFS_3G}/FUSE for macOS.pkg"
 
-    if [ $current_user -ne $root_user ]; then
-        cat <<EOF
-Questo tool deve essere lanciato con privilegi di amministratore
-EOF
-		return $EXIT_FAILURE
-    fi
-    return $EXIT_SUCCESS
+# Partizioni su cui operare
+declare partitions=()
+
+# Azioni
+declare intall_ntfs3g_op=false
+declare show_physical_devices_op=false
+declare ask=true
+
+
+function msg {
+	case "${1}" in
+		G ) printf "${G}${2}${NC}\n" ;;
+		Y ) printf "${Y}${2}${NC}\n" ;;
+		R ) printf "${R}${2}${NC}\n" ;;
+		DG ) printf "${DG}${2}${NC}\n" ;;
+		U ) printf "${U}${2}${NC}\n" ;;
+		BD ) printf "${BD}${2}${NC}\n" ;;
+		* ) printf "${NC}${2}\n" ;;
+	esac
 }
 
-function check_tool_ntfs {
-	if ! command -v ntfs-3g &> "$DEV_NULL"; then
-		echo "E' necessario installare il tool FUSE per montare in lettura/scrittura le partizioni NTFS"
-		echo "Scaricare ed installare il tool?"
-		echo "[ s / n ]"
-		read choise
-		if [ "$choise" == "s" ]; then
-			cd "$TMP"
-			curl -LJO "$URL_NTFS_3G"
-			hdiutil mount "$TMP/$FILENAME_NTFS_3G" &> "$DEV_NULL"
-			installer -package "$PACKAGE_PATH_NTFS_3G" -target "$TARGET_INSTALLATION"
-			status_code=$?
-			hdiutil unmount "$VOL_NTFS_3G" &> "$DEV_NULL"
-			rm "$TMP/$FILENAME_NTFS_3G"
-			return $status_code
-		fi
-		return $EXIT_FAILURE
+function get_response {
+	msg "${1}" "${2}\t[ S / N ]"
+
+	local choose
+	read -e choose
+	if [[ "${choose}" == [sS] ]]; then
+		return ${EXIT_SUCCESS}
+	else
+		return ${EXIT_FAILURE}
 	fi
-	return $EXIT_SUCCESS
+}
+
+function check_tools {
+	local tools_missing=false
+
+	while [[ ${#} -gt 0 ]]; do
+		command -v "${1}" &> "${DEV_NULL}"
+		if [[ ${?} != 0 ]]; then
+			msg 'R' "Il tool ${1}, necessario per l'esecuzione di questo script, non è presente nel sistema.\nInstallarlo per poter continuare."
+			tools_missing=true
+		fi
+		shift
+	done
+
+	[[ "${tools_missing}" == true ]] && return ${EXIT_FAILURE} || return ${EXIT_SUCCESS}
+}
+
+function check_root {
+	local current_user=$(id -u)
+	local root_user=0
+
+    if [[ ${current_user} -ne ${root_user} ]]; then
+    	msg 'R' "Questo tool deve essere lanciato con privilegi di amministratore"
+        return ${EXIT_MISSING_PERMISSION}
+    fi
+
+    return ${EXIT_SUCCESS}
+}
+
+function install_ntfs3g {
+	if check_tools ntfs-3g; then
+		msg 'NC' 'Il tool ntfs-3g è già installato sul sistema'
+		return ${EXIT_SUCCESS}
+	fi
+
+	msg 'NC' 'Download ed installazione del tool ntfs-3g'
+	if [[ "${ask}" == true ]] && ! get_response 'Y' "Continuare?"; then
+		msg 'Y' 'Il tool non è stato scaricato o installato'
+		return ${EXIT_FAILURE}
+	fi
+
+	local current_dir="${PWD}"
+	(
+		cd "${TMP}"
+		curl -LJO "${URL_NTFS_3G}"
+		hdiutil mount "${TMP}/${FILENAME_NTFS_3G}" &> "${DEV_NULL}"
+		installer -package "${PACKAGE_PATH_NTFS_3G}" -target "${TARGET_INSTALLATION}"
+		status_code=${?}
+		hdiutil unmount "${VOL_NTFS_3G}" &> "${DEV_NULL}"
+		rm "${TMP}/${FILENAME_NTFS_3G}"
+		return ${status_code}
+	)
+	return ${?}
 }
 
 function create_support_dir {
 	# Creazione directory in /Volumes se non esistono
-	[ ! -d "$1" ] && mkdir "$1"
+	[[ ! -d "${1}" ]] && mkdir "${1}"
 }
 
 function mount_partition {
-	# $1 -> device
-	# $2 -> mount point
+	# ${1} -> device
+	# ${2} -> mount point
 	# Per utilizzare ntfs-3g è necessario installare FUSE (https://osxfuse.github.io/)
-	ntfs-3g -o local -o allow_other -o uid=501 -o gid=20 -o umask=037 "$1" "$2"
+	ntfs-3g -o local -o allow_other -o uid=501 -o gid=20 -o umask=037 "${1}" "${2}"
 	
 	# Controllo se ci sono stati errori
-	if [ $? -ne $EXIT_SUCCESS ]; then
+	if [[ ${?} -ne ${EXIT_SUCCESS} ]]; then
 		# Controllo se la directory è vuota
-		if [ -z "`ls -A "$2"`" ]; then
-			echo "La directory $2 non è più necessaria"
-			echo "Vuoi rimuoverla?"
-			echo "[ s / n ]"
-			read choise
-			if [ "$choise" == "s" ]; then
-				rm -rf "$2"
-				echo "La directory $2 è stata rimossa"
-			else
-				echo "La directory $2 non è stata rimossa"
+		if [[ -z "$(ls -A "${2}")" ]]; then
+			msg 'NC' "La directory ${2} non è più necessaria"
+			if [[ "${ask}" == true ]] && ! get_response 'Y' "Rimuoverla?"; then
+				msg 'NC' "La directory ${2} non è stata rimossa"
+				return ${EXIT_FAILURE}
 			fi
+
+			rm -rf "${2}"
+			msg 'NC' "La directory ${2} è stata rimossa"
 		else
-			echo "La directory $2 non è più necessaria ma sembra essere non vuota"
-			echo "Se necessario rimuoverla manualmente"
-			open "$VOLUMES"
+			msg 'Y' "La directory ${2} non è più necessaria ma sembra essere non vuota"
+			msg 'Y' "Dovrà essere rimossa in modo manualmente"
+			open "${VOLUMES}"
 		fi
-		return $EXIT_FAILURE
+		return ${EXIT_FAILURE}
 	fi
 
-	return $EXIT_SUCCESS
+	return ${EXIT_SUCCESS}
 }
 
 function umount_partition {
-	diskutil umount "$1" &>"$DEV_NULL"
+	diskutil umount "${1}" &>"${DEV_NULL}"
 }
 
 function usage {
-	cat <<EOF
-# Utilizzo
+	local usage
+	read -r -d '' usage << EOF
+${BD}### Utilizzo${NC}
 
-	sudo $script_name -[options]
+	sudo ${script_name} -[options]
 
-# Options
+	Wrapper utile per montare in lettura e scrittura drives esterni.
 
-	-h | -H )					Per visualizzare le opzioni disponibili
-	-p part_id | -P part_id )	Per specificare la partizione NTFS da montare in lettura/scrittura
-	-s | -S )					Mostra i devices fisici estrerni collegati che è possibile montare
+${BD}### Options${NC}
 
-# Examples
+	-i | --install-ntfs-3g
+		Provvede ad installare il tool ntfs-3g utile a montare il lettura/scruttura i drives.
 
-	sudo $script_name -p "disk5s1"
+	-p ${U}parts_id${NC} | --partitions ${U}parts_id${NC}
+		Per specificare le partizioni NTFS da montare in lettura/scrittura.
+		${U}parts_id${NC} è una delle stringhe contenute nella colonna IDENTIFIER della
+		tabella ottenuta utilizzando il flag -s.
+		Per montare più di una partizione, la stringa ${U}parts_id${NC} deve contenere i nomi
+		delle partizioni separati dal carattere ':'.
+
+	-s | --show-physical-devices
+		Mostra i devices fisici estrerni collegati che è possibile montare.
+
+	-y | --yes
+		Disabilita interazioni utente.
+
+${BD}### Examples${NC}
+
+	sudo ${script_name} -p "disk5s1"
 		Monterà in lettura e scittura la partizione s1 del disco disk5
-	sudo $script_name -p "disk6s1" -p "disk8s4"
-		Monterà in lettura e scrittura le partizioni s1 e s4 rispettivamente dei dischi disk6 e disk8
 
-# Note
+	sudo ${script_name} -p "disk6s1:disk8s4"
+		Monterà in lettura e scrittura le partizioni s1 e s4 rispettivamente dei dischi disk6 e disk8.
+		Utilizzare il carattere ':' per separare i nomi delle partizioni da montare.
+
+${BD}### Note${NC}
 
 	E' possibile utilizzare il flag -s per visualizzare l'elenco delle partizioni che è possibile montare nel sistema.
 	Basta vedere la colonna IDENTIFIER.
+\n
 EOF
+
+	printf "${usage}"
 }
 
 function show_physical_devices {
-	local devices="`diskutil list external physical`"
-	if [ -z "$devices" ]; then
-		devices="*** Nessun device fisico esterno è collegato al computer ***"
+	local devices="$(diskutil list external physical)"
+	msg 'NC' "Device estrerni collegati al computer:"
+	if [[ -z "${devices}" ]]; then
+		msg 'NC' "*** Nessun device fisico esterno è collegato al computer ***"
+	else
+		msg 'NC' "${devices}"
 	fi
-
-	echo "Device estrerni collegati al computer:"
-	echo "$devices"
 }
 
-function check_args {
-	if [ $# -eq 0 ]; then
+function parse_input {
+	if [[ ${#} -eq 0 ]]; then
+		msg 'R' "ERRORE: Non è stato specificato alcun argomento."
 		usage
-		return $EXIT_FAILURE
+		return ${EXIT_NO_ARGS}
 	fi
 
-	while [ $# -gt 0 ]; do
-		case "$1" in
-			-[hH] )
+	while [[ ${#} -gt 0 ]]; do
+		case "${1}" in
+			-[hH] | -help | -HELP | --help | --HELP )
 				usage
-				exit $EXIT_SUCCESS
+				return ${EXIT_HELP_REQUESTED}
 				;;
 
-			-[pP] )
-				shift
-				partitions+=("$1")
+			-i | --install-ntfs-3g )
+				install_ntfs3g_op=true
 				shift
 				;;
 
-			-[sS] )
-				show_physical_devices
-				break
+			-p | --partitions )
+				shift
+				local IFS=':'
+				partitions=(${1})
+				shift
+				;;
+
+			-s | --show-physical-devices )
+				show_physical_devices_op=true
+				shift
+				;;
+
+			-y | --yes )
+				ask=false
+				shift
 				;;
 
 			* )
-				echo "Opzione \"$1\" sconosciuta"
-				return $EXIT_FAILURE
+				msg 'R' "ERRORE: Opzione \"${1}\" sconosciuta"
+				return ${EXIT_FAILURE}
 				;;
 		esac
 	done
 
-	return $EXIT_SUCCESS
+	return ${EXIT_SUCCESS}
 }
 
 function check_partition {
-	if ! diskutil info "$DEV/$1" &>"$DEV_NULL"; then
-		echo "La partizione <${partitions[$i]}> non esiste"
-		return $EXIT_FAILURE
+	if ! diskutil info "${DEV}/${1}" &> "${DEV_NULL}"; then
+		msg 'Y' "ATTENZIONE: La partizione <${partitions[${i}]}> non esiste e non sarà considerata"
+		return ${EXIT_FAILURE}
 	fi
 
 	# Controllo che sia effettivamente una partizione e non un disco
@@ -171,40 +267,73 @@ function check_partition {
 	# Divido la stringa restante (del tipo XXXsYYY) in un array del tipo ARR=("XXX", "YYY")
 	# Contrllo se esiste il secondo elemento dell'array. Se non esiste vuol dire che non
 	# è una partizione
-	IFS='s' read -r -a tmp_array <<< "${1#disk*}"
-	if ! [ "${#tmp_array[@]}" -eq 2 ]; then
-		echo "Formato errato della partizione"
-		echo "Le partizioni hanno il seguente formato: diskXXXsYYY"
-		echo "Input ricevuto: $1"
-		return $EXIT_FAILURE
+	local IFS='s'
+	local tmp_array
+	read -r -a tmp_array <<< "${1#disk*}"
+	if ! [[ "${#tmp_array[@]}" -eq 2 ]]; then
+		msg 'R' "Formato errato della partizione
+Le partizioni hanno il seguente formato: diskXXXsYYY
+Input ricevuto: ${1}"
+		return ${EXIT_FAILURE}
 	fi
 
-	return $EXIT_SUCCESS
+	return ${EXIT_SUCCESS}
 }
 
-
-
-function main {
-	check_root || return $EXIT_FAILURE
-
-	if ! check_tool_ntfs; then
-		echo "Errore installazione"
-		return $EXIT_FAILURE
-	fi
-
-	check_args "$@" || return $EXIT_FAILURE
-
+function mount_partitions {
 	for ((i = 0; i < ${#partitions[@]}; ++i)); do
-		check_partition "${partitions[$i]}" || continue
+		check_partition "${partitions[${i}]}" || continue
 
-		mount_point="$VOLUMES/${partitions[$i]}"
-		dev_to_mount="$DEV/${partitions[$i]}"
+		mount_point="${VOLUMES}/${partitions[${i}]}"
+		dev_to_mount="${DEV}/${partitions[${i}]}"
 
-		umount_partition "$dev_to_mount"
-		create_support_dir "$mount_point"
-		mount_partition "$dev_to_mount" "$mount_point"
+		umount_partition "${dev_to_mount}"
+		create_support_dir "${mount_point}"
+		mount_partition "${dev_to_mount}" "${mount_point}"
 	done
 }
 
-main "$@"
-exit $?
+function lazy_init_tool_vars {
+	script_name="$(basename "${0}")"
+ 	script_filename="${0}"
+}
+
+# ${1} -> main return code
+function on_exit {
+    if [[ ${1} -ne ${EXIT_HELP_REQUESTED} && ${1} -ne ${EXIT_MISSING_PERMISSION} && ${1} -ne ${EXIT_NO_ARGS} ]]; then
+        if [[ ${1} -eq ${EXIT_SUCCESS} ]]; then
+            msg 'G' "Operazioni eseguite con successo."
+        else
+            msg 'R' "Qualcosa è andato storto."
+        fi
+    fi
+    exit ${1}
+}
+
+function main {
+	check_root || return ${?}
+
+	lazy_init_tool_vars
+
+	check_tools diskutil ntfs-3g open mkdir basename \
+	curl hdiutil installer rm || return ${?}
+
+	parse_input "${@}" || return ${?}
+
+	if [[ "${install_ntfs3g_op}" == true ]]; then
+		install_ntfs3g || return ${?}
+	fi
+
+	if [[ "${show_physical_devices_op}" == true ]]; then
+		show_physical_devices || return ${?}
+	fi
+
+	if [[ ${#partitions} -gt 0 ]]; then
+		mount_partitions || return ${?}
+	fi
+
+	return ${EXIT_SUCCESS}
+}
+
+main "${@}"
+on_exit ${?}

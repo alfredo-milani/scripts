@@ -5,7 +5,7 @@
 # Autore: Alfredo Milani (alfredo.milani.94@gmail.com)
 # Data: Gio 20 Set 2018 12:40:51 CEST
 # Licenza: MIT License
-# Versione: 1.0.0
+# Versione: 1.7.0
 # Note: --/--
 # Versione bash: 4.4.19(1)-release
 # ============================================================================
@@ -29,6 +29,7 @@ declare -r -i EXIT_DISKUTIL_MOUNT_ERR=5
 declare -r -i EXIT_RAMDISK_SYNTAX_ERR=6
 declare -r -i EXIT_HELP_REQUESTED=7
 declare -r -i EXIT_NO_ARGS=8
+declare -r -i EXIT_MISSING_PERMISSION=9
 
 # Readonly vars
 declare -r LOG='/var/log/ramdisk_manager.log'
@@ -46,7 +47,7 @@ declare username
 declare script_name
 declare script_filename
 
-declare links_to_create=()
+declare links=()
 declare -i ramdisk_size
 declare ramdisk_name
 declare ramdisk_mount_point
@@ -59,12 +60,8 @@ declare unload_service_op=false
 declare create_link_Download_op=false
 declare check_deps_op=true
 declare create_trash_op=false
+declare link_health_op=false
 
-
-# Versione cutom del tool realpath
-function rp_cstm {
-    [[ "${1}" = /* ]] && echo "${1}" || echo "${PWD}/${1#./}"
-}
 
 function log {
 	printf "${1}\n" >> "${LOG}"
@@ -122,7 +119,7 @@ function check_root {
 
     if [[ ${current_user} -ne ${root_user} ]]; then
     	msg 'R' "Questo tool deve essere lanciato con privilegi di amministratore"
-        return ${EXIT_FAILURE}
+        return ${EXIT_MISSING_PERMISSION}
     fi
 
     return ${EXIT_SUCCESS}
@@ -213,8 +210,8 @@ function create_and_launch_plist {
 			<string>${ramdisk_name}</string>
 			<string>${ramdisk_mount_point}</string>
 			<string>${ramdisk_size}</string>
-			<string>--not-ask-permission</string>
-			<string>--skip-deps-check</string>
+			<string>--yes</string>
+			<string>--jump-deps-check</string>
 			$(
 				if [[ "${create_link_Download_op}" == true ]]; then
 					printf '\t\t\t<string>%s</string>\n' '--set-user-profile'
@@ -224,10 +221,10 @@ function create_and_launch_plist {
 				if [[ "${create_trash_op}" == true ]]; then
 					printf '\t\t\t<string>%s</string>\n' '--create-trash'
 				fi
-				if [[ "${#links_to_create[@]}" -gt 0 ]]; then
+				if [[ "${#links[@]}" -gt 0 ]]; then
 					local IFS=':'
 					printf '\t\t\t<string>%s</string>\n' '--filenames-to-create'
-					printf '\t\t\t<string>%s</string>\n' "${links_to_create[*]}"
+					printf '\t\t\t<string>%s</string>\n' "${links[*]}"
 				fi
 			)
 		</array>
@@ -243,12 +240,60 @@ EOF
 	launchctl load -w "${plist_file}"
 }
 
+# ${1} -> hierarchy
+# ${2} -> key
+# ${3} -> file
+# links -> variabile globale di tipo array
+function get_links {
+	local i=1
+	local found=false
+	local tmp
+	while : ; do
+		tmp="$(xmllint --xpath "${1}[${i}]/text()" "${3}")";
+		if [[ "${found}" == true ]]; then
+			local IFS=':'
+			links=(${tmp})
+			break
+		elif [[ "${tmp}" == "${2}" ]]; then
+			found=true
+		elif [[ -z "${tmp}" ]]; then
+			break
+		fi
+
+		i=$((++i))
+	done
+}
+
+function unload_links {
+	msg 'NC' 'Sostituzione links simbolici con directory'
+
+	local plist_file="${launch_daemons_sys_path}/${daemon_name}.plist"
+	if ! [[ -f "${plist_file}" ]]; then
+		msg 'Y' "Il file ${plist_file} non esiste quindi non è possibile eliminare i links creati in precedenza."
+		return ${EXIT_FAILURE}
+	fi
+
+	get_links '/plist/dict/array/string' '--filenames-to-create' "${plist_file}"
+	for link in "${links[@]}"; do
+		if [[ -L "${link}" ]]; then
+			rm -rf "${link}"
+			mkdir "${link}"
+		fi
+	done
+
+	return ${EXIT_SUCCESS}
+}
+
 function unload_script {
+	msg 'NC' 'Eliminazione script per la gestione del ramdisk.'
+
 	# Eliminazione script
 	rm -f "${scripts_sys_path}/${script_name}"
 }
 
 function unload_plist {
+	msg 'NC' 'Eliminazione servizio per la gestione ramdisk'
+
 	# Disabilitazione caricamento automatico
 	launchctl unload -w "${launch_daemons_sys_path}/${daemon_name}" &> "${DEV_NULL}" || return ${EXIT_FAILURE}
 	# Rimozione file *.plist
@@ -256,6 +301,7 @@ function unload_plist {
 }
 
 function unload_service {
+	unload_links
 	unload_script
 	unload_plist
 }
@@ -314,15 +360,50 @@ function create_ramdisk {
     return ${EXIT_SUCCESS}
 }
 
+function check_links_health {
+	msg 'NC' 'Controllo stato dei links simbolici'
+
+	local plist_file="${launch_daemons_sys_path}/${daemon_name}.plist"
+	if ! [[ -f "${plist_file}" ]]; then
+		msg 'Y' "Il file ${plist_file} non esiste quindi non è possibile controllare lo stato dei links."
+		return ${EXIT_FAILURE}
+	fi
+
+	get_links '/plist/dict/array/string' '--filenames-to-create' "${plist_file}"
+	local i=0
+	for link in "${links[@]}"; do
+		i=$((++i))
+		cat <<EOF
+${i}. ${link}:
+	- is link: $([[ -L "${link}" ]] && msg 'G' 'True' || msg 'R' 'False')
+	- link is broken: $([[ -e "${link}" ]] && msg 'G' 'False' || msg 'R' 'True')
+	- source: $(
+		local realpath="$(readlink "${link}")"
+		if [[ -n "${realpath}" ]]; then
+			if [[ -e "${realpath}" ]]; then
+				msg 'G' "${realpath}"
+			else
+				printf "${NC}${realpath}${NC} ${R}(not existing)${NC}\n"
+			fi
+		else
+			msg 'R' '--/--'
+		fi
+	)
+EOF
+	done
+
+	return ${EXIT_SUCCESS}
+}
+
 function create_links {
 	local linkdir='Links'
-	for file in "${links_to_create[@]}"; do
+	for file in "${links[@]}"; do
 		# Creo la directory nel ramdisk
 		mkdir -p "${ramdisk_mount_point}/${linkdir}/${file}"
 
 		# Controllo se il file da sostituire con un link sia già un link e 
 		# in caso negativo elimino la directory e creo il link
-		if ! [[ -e "${file}" && "$(rp_cstm "${file}")" == "${ramdisk_mount_point}/${linkdir}/${file}" ]]; then
+		if ! [[ -e "${file}" && "$(readlink "${file}")" == "${ramdisk_mount_point}/${linkdir}/${file}" ]]; then
 		 	rm -rf "${file}"
 			ln -s "${ramdisk_mount_point}/${linkdir}/${file}" "${file}"
 		fi
@@ -357,17 +438,18 @@ ${BD}### Options${NC}
 
 		"/path_uno/directory_uno:/path_due/directory_due/:/path_tre/directory_tre"
 
-	-nask | --not-ask-permission
-		Non chiede il permesso dell'utente prima di eseguire un'operazione.
+	-j | --jump-deps-check
+		Disabilitazione controllo dipendenze tools ausiliari.
+
+	-l | --link-health
+		Legge il file che gestisce il servizio di creazione del ramdisk contenuto nella directory ${launch_daemons_sys_path}
+		e verifica la salute di tutti i links specificiati dal comando --filenames-to-create.
 
 	-p ${U}username${NC} | --set-user-profile ${U}username${NC}
 		Specifica lo username che si vuole utilizzare.
-		Questa opzione è utile per impostare correttamente i path che vengono usati con il flag -d e -su.
+		Questa opzione è utile per impostare correttamente i path che vengono usati con il flag -d e -s.		
 
-	-sd | --skip-deps-check
-		Disabilitazione controllo dipendenze tools ausiliari.
-
-	-su ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC} | --setup-ramdisk-at-boot ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC}
+	-s ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC} | --setup-ramdisk-at-boot ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC}
 		Inizializza i files necessari per la creazione del ramdisk all'avvio del sistema.
 		Il ramdisk verrà inizializzato creando un disco di nome ${U}ramdisk_name${NC} di dimensione ${U}ramdisk_size_MB${NC} che
 		verrà montato in ${U}ramdisk_mount_point${NC}.
@@ -376,20 +458,27 @@ ${BD}### Options${NC}
 		Crea la directory "Trash" all'interno della directory dove è stato montato il ramdisk
 
 	-u | --unload-script
-		Permette di non caricare più lo script all'avvio del sistema.
+		Esegue queste operazioni:
+			1. rimuove i links simbolici creati e riscostruisce le directory precedenti;
+			2. rimuove lo script ${script_name} dalla directory ${scripts_sys_path};
+			3. disabilita il servizio per la creazione automatica di un ramdisk e rimuove
+				il file *.plist dalla directory ${launch_daemons_sys_path};
+
+	-y | --yes
+		Non chiede il permesso dell'utente prima di eseguire un'operazione.
 
 ${BD}### Esempio di utilizzo${NC}
 
-	$ sudo ${script_name} -t -d -p user -f "/Library/Caches:/Library/Logs:/Users/user/Library/Caches" -su Ramdisk /Volumes/Ramdisk 1000
+	$ sudo ${script_name} -t -d -p $(whoami) -f "/Library/Caches:/Library/Logs:/Users/$(whoami)/Library/Caches" -s Ramdisk /Volumes/Ramdisk 1000
 
 		Crea un file *.plist nella directory ${launch_daemons_sys_path} e copia questo script nella posizione ${scripts_sys_path}.
 		Così facendo verrà creato un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB, inoltre verrà
-		creato un link simbolico del punto di mount nella directory /Users/user/Download/ e verrà creato una directory di nome "Trash"
+		creato un link simbolico del punto di mount nella directory /Users/$(whoami)/Download/ e verrà creato una directory di nome "Trash"
 		all'interno del Ramdisk.
-		Le directories /Library/Caches, /Library/Logs e /Users/user/Library/Caches saranno sostituite con dei link simbolici che puntano a
+		Le directories /Library/Caches, /Library/Logs e /Users/$(whoami)/Library/Caches saranno sostituite con dei link simbolici che puntano a
 		directories all'interno del ramdisk, quindi in questo caso saranno eliminate le directories /Library/Caches, /Library/Logs e
-		/Users/user/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/Links/Library/Caches, /Volumes/Ramdisk/Links/Library/Logs e
-		/Volumes/Ramdisk/Links/Users/user/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/Links/
+		/Users/$(whoami)/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/Links/Library/Caches, /Volumes/Ramdisk/Links/Library/Logs e
+		/Volumes/Ramdisk/Links/Users/$(whoami)/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/Links/
 		nella posizione di origine (specificate dal flag -f).
 
 	$ ${script_name} -c Ramdisk /Volumes/Ramdisk 1000
@@ -413,12 +502,10 @@ function parse_input {
 			-c | --create-ramdisk )
 				shift
 				ramdisk_name="${1}"
-				shift
-				ramdisk_mount_point="${1}"
-				shift
-				ramdisk_size="${1}"
+				ramdisk_mount_point="${2}"
+				ramdisk_size="${3}"
 				create_ramdisk_op=true
-				shift
+				shift 3
 				;;
 
 			-d | --create-link-in-Download )
@@ -429,17 +516,22 @@ function parse_input {
 			-f | --filenames-to-create )
 				shift
 				local IFS=':'
-				links_to_create=(${1})
+				links=(${1})
 	        	shift
 				;;
 
-			-[hH] | --help | --HELP )
+			-[hH] | -help | -HELP | --help | --HELP )
 				usage
 				return ${EXIT_HELP_REQUESTED}
 				;;
 
-			-nask | --not-ask-permission )
-				ask=false
+			-l | --link-health )
+				link_health_op=true
+				shift
+				;;
+
+			-j | --jump-deps-check )
+				check_deps_op=false
 				shift
 				;;
 
@@ -449,20 +541,13 @@ function parse_input {
 				shift
 				;;
 
-			-sd | --skip-deps-check )
-				check_deps_op=false
-				shift
-				;;
-
-			-su | --setup-ramdisk-at-boot )
+			-s | --setup-ramdisk-at-boot )
 				shift
 				ramdisk_name="${1}"
-				shift
-				ramdisk_mount_point="${1}"
-				shift
-				ramdisk_size="${1}"
+				ramdisk_mount_point="${2}"
+				ramdisk_size="${3}"
 				setup_ramdisk_op=true;
-				shift
+				shift 3
 				;;
 
 			-t | --create-trash )
@@ -472,6 +557,11 @@ function parse_input {
 
 			-u | --unload-script )
 				unload_service_op=true
+				shift
+				;;
+
+			-y | --yes )
+				ask=false
 				shift
 				;;
 
@@ -488,33 +578,41 @@ function parse_input {
 function validate_input {
 	# Non possono essere specificate entrambi i flags contemporaneamente
 	if [[ "${create_ramdisk_op}" == true && "${setup_ramdisk_op}" == true ]]; then
-		msg 'R' "ERRORE: Non è possibile specificare contemporaneamente i flags -c e -su."
+		msg 'R' "ERRORE: Non è possibile specificare contemporaneamente i flags -c e -s."
 		return ${EXIT_FAILURE}
 	fi
 
-	# Informazioni necessarie sia per creare un ramdisk che per il setup all'avvio del sistema
-	if [[ ${ramdisk_size} -le 0 ]]; then
-		msg 'R' "ERRORE: La dimensione del ramdisk non può essere <= 0"
-		return ${EXIT_RAMDISK_SYNTAX_ERR}
-	elif [[ -z "${ramdisk_name}" ]]; then
-		msg 'R' "ERRORE: Il nome del ramdisk non può essere vuoto"
-		return ${EXIT_RAMDISK_SYNTAX_ERR}
-	elif [[ -z "${ramdisk_mount_point}" ]]; then
-		msg 'R' "ERRORE: Il punto di mount del ramdisk non può essere vuoto"
-		return ${EXIT_RAMDISK_SYNTAX_ERR}
+	if [[ "${unload_service_op}" == true ]] && [[ "${create_ramdisk_op}" == true || "${setup_ramdisk_op}" == true ]]; then
+		msg 'R' "ERRORE: Non è possibile specificare contemporaneamente i flags -c e -u o -s e -u."
+		return ${EXIT_FAILURE}
+	fi
 
-	elif [[ "${create_ramdisk_op}" == true && ! -d "${ramdisk_mount_point}" ]]; then
-		msg 'NC' "Creazione directory su cui montare il ramdisk - \"${ramdisk_mount_point}\""
-		if [[ "${ask}" == true ]] && ! get_response 'Y' "Continuare?"; then
-			msg 'Y' "La crezione del punto di mount non è stata effettuata"
-			return ${EXIT_FAILURE}
+	if [[ "${create_ramdisk_op}" == true || "${setup_ramdisk_op}" == true ]]; then
+		# Informazioni necessarie sia per creare un ramdisk che per il setup all'avvio del sistema
+		if [[ ${ramdisk_size} -le 0 ]]; then
+			msg 'R' "ERRORE: La dimensione del ramdisk non può essere <= 0"
+			return ${EXIT_RAMDISK_SYNTAX_ERR}
+		elif [[ -z "${ramdisk_name}" ]]; then
+			msg 'R' "ERRORE: Il nome del ramdisk non può essere vuoto"
+			return ${EXIT_RAMDISK_SYNTAX_ERR}
+		elif [[ -z "${ramdisk_mount_point}" ]]; then
+			msg 'R' "ERRORE: Il punto di mount del ramdisk non può essere vuoto"
+			return ${EXIT_RAMDISK_SYNTAX_ERR}
+
+		elif [[ "${create_ramdisk_op}" == true && ! -d "${ramdisk_mount_point}" ]]; then
+			msg 'NC' "Creazione directory su cui montare il ramdisk - \"${ramdisk_mount_point}\""
+			if [[ "${ask}" == true ]] && ! get_response 'Y' "Continuare?"; then
+				msg 'Y' "La crezione del punto di mount non è stata effettuata"
+				return ${EXIT_FAILURE}
+			fi
+			mkdir -p "${ramdisk_mount_point}" || return ${EXIT_FAILURE}
 		fi
-		mkdir -p "${ramdisk_mount_point}" || return ${EXIT_FAILURE}
 	fi
 
 	# Necessario specificare lo username per risolvere correttamente i paths
-	if [[ "${create_link_Download_op}" == true || "${setup_ramdisk_op}" == true ]] && [[ -z "${username}" ]]; then		
-		msg 'R' "ERRORE: Il campo username NON può essere vuoto se si vuole creare un link nella directory Download o creare il ramdisk all'avvio del sistema.\nUtilizzare il flag -p username."
+	if [[ "${create_link_Download_op}" == true || "${setup_ramdisk_op}" == true || 
+		"${unload_service_op}" == true || "${link_health_op}" == true ]] && [[ -z "${username}" ]]; then		
+		msg 'R' "ERRORE: Il campo username NON può essere vuoto.\nUtilizzare il flag -p username."
 		return ${EXIT_FAILURE}
 	fi
 
@@ -544,7 +642,7 @@ function create_trash {
 
 # ${1} -> main return code
 function on_exit {
-	if [[ ${1} -ne ${EXIT_HELP_REQUESTED} && ${1} -ne ${EXIT_NO_ARGS} ]]; then
+	if [[ ${1} -ne ${EXIT_HELP_REQUESTED} && ${1} -ne ${EXIT_NO_ARGS} && ${1} -ne ${EXIT_MISSING_PERMISSION} ]]; then
 		if [[ ${1} -eq ${EXIT_SUCCESS} ]]; then
 			msg 'G' "Operazioni eseguite con successo."
 		else
@@ -555,21 +653,22 @@ function on_exit {
 }
 
 # Utilizzare questi flags per creare il file *.plist, lo script in una 
-# posizione di sistema e caricare lo script all'avvio del sistema
+# posizione di sistema e caricare lo script all'avvio del sistema:
+# ${script_filename}
 # -t
 # -d
-# -p alfredo
-# -f "/Library/Caches:/Library/Logs:/System/Library/Caches:/System/Library/CacheDelete:/private/tmp:/private/var/log:/private/var/tmp:/Users/alfredo/Library/Logs:/Users/alfredo/Library/Caches:/Users/alfredo/.cache"
-# -su Ramdisk /Volumes/Ramdisk 1000
+# -p $(whoami)
+# -f "/Library/Caches:/Library/Logs:/System/Library/Caches:/System/Library/CacheDelete:/private/tmp:/private/var/log:/private/var/tmp:/Users/$(whoami)/Library/Logs:/Users/$(whoami)/Library/Caches:/Users/$(whoami)/.cache"
+# -s Ramdisk /Volumes/Ramdisk 1000
 function main {
 
 	# Controllo dipendenze
 	if [[ "${check_deps_op}" == true ]]; then
 		# Controllo se il sistema operativo è MacOSX
-		check_os || return ${EXIT_FAILURE}
+		check_os || return ${?}
 		# Controllo tools non builtin
-		check_tools open read touch basename mv rm ln \
-		cp tee hdiutil diskutil newfs_apfs mkdir || return ${EXIT_FAILURE}
+		check_tools open read touch basename mv rm ln xmllint \
+		cp tee hdiutil diskutil newfs_apfs mkdir readlink || return ${?}
 	fi
 
 	# Inizializzazione variabili del tool
@@ -589,12 +688,17 @@ function main {
 		unload_service || return ${?}
 	fi
 
+	# Verifica salute links simbolici
+	if [[ "${link_health_op}" == true ]]; then
+		check_links_health || return ${?}
+	fi
+
 	# Creazione ramdisk
 	if [[ "${create_ramdisk_op}" == true ]]; then
 		create_ramdisk "${ramdisk_name}" "${ramdisk_mount_point}" ${ramdisk_size} || return ${?}
 
 		# Creazione links all'interno del ramdisk
-		if [[ "${#links_to_create[@]}" -gt 0 ]]; then
+		if [[ "${#links[@]}" -gt 0 ]]; then
 			create_links || return ${?}
 		fi
 
