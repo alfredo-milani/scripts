@@ -273,12 +273,12 @@ function parse_input {
 function sync_operation {
 	if [[ -d "${1}" ]]; then
 		if [[ "${1:(-1)}" == '/' ]]; then
-			msg 'NC' "\nSincronizzazione CONTENUTI direcotry \"${1}\" nella directory \"${2}\""
+			msg 'NC' "\nSincronizzazione ${U}CONTENUTI${NC} direcotry \"${1}\" nella directory \"${2}\""
 		else
-			msg 'NC' "\nSincronizzazione INTERA direcotry \"${1}\" nella directory \"${2}\""
+			msg 'NC' "\nSincronizzazione ${U}INTERA${NC} direcotry \"${1}\" nella directory \"${2}\""
 		fi
 	else
-		msg 'NC' "\nSincronizzazione FILE \"${1}\" nella directory \"${2}\""
+		msg 'NC' "\nSincronizzazione ${U}FILE${NC} \"${1}\" nella directory \"${2}\""
 	fi
 
 	if [[ "${ask}" == true ]] && ! get_response 'Y' "Continuare?"; then
@@ -301,7 +301,7 @@ function archive {
 	if [[ -d "${1}" ]]; then
 		# Archiviazione di tutti i files contenuti nella direcotry sorgente
 		if [[ "${1:(-1)}" == '/' ]]; then
-			msg 'NC' "\nArchiviazinoe CONTENUTI direcotry \"${1}\" nella directory \"${2}\""
+			msg 'NC' "\nArchiviazinoe ${U}CONTENUTI${NC} direcotry \"${1}\" nella directory \"${2}\""
 			if [[ "${ask}" == true ]] && ! get_response 'Y' "Continuare?"; then
 				msg 'Y' "L'archiviazione di \"${1}\" in \"${2}\" è stata interrotta"
 				return ${EXIT_FAILURE}
@@ -311,7 +311,7 @@ function archive {
 			rc=${?}
 		# Archiviazione della cartella sorgente		
 		else
-			msg 'NC' "\nArchiviazione CONTENUTI direcotry \"${1}\" nella directory \"${2}\""
+			msg 'NC' "\nArchiviazione ${U}INTERA${NC} direcotry \"${1}\" nella directory \"${2}\""
 			if [[ "${ask}" == true ]] && ! get_response 'Y' "Continuare?"; then
 				msg 'Y' "L'archiviazione di \"${1}\" in \"${2}\" è stata interrotta"
 				return ${EXIT_FAILURE}
@@ -322,7 +322,7 @@ function archive {
 		fi
 	else
 		# Archiviazione file
-		msg 'NC' "\Archiviazione FILE \"${1}\" nella directory \"${2}\""
+		msg 'NC' "\Archiviazione ${U}FILE${NC} \"${1}\" nella directory \"${2}\""
 		if [[ "${ask}" == true ]] && ! get_response 'Y' "Continuare?"; then
 			msg 'Y' "L'archiviazione di \"${1}\" in \"${2}\" è stata interrotta"
 			return ${EXIT_FAILURE}

@@ -5,7 +5,7 @@
 # Autore: Alfredo Milani (alfredo.milani.94@gmail.com)
 # Data: Gio 20 Set 2018 12:40:51 CEST
 # Licenza: MIT License
-# Versione: 1.7.0
+# Versione: 1.8.0
 # Note: --/--
 # Versione bash: 4.4.19(1)-release
 # ============================================================================
@@ -434,6 +434,7 @@ ${BD}### Options${NC}
 	-f ${U}file_list${NC} | --filenames-to-create ${U}file_list${NC}
 		Una volta creato il ramdisk elimina le directories specificate e crea un link
 		simbolico delle stesse all'interno del ramdisk.
+		Il contenuto delle directories verrà eliminato.
 		Il parametro ${U}file_list${NC} deve avere il seguente formato:
 
 		"/path_uno/directory_uno:/path_due/directory_due/:/path_tre/directory_tre"
@@ -480,10 +481,18 @@ ${BD}### Esempio di utilizzo${NC}
 		/Users/$(whoami)/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/Links/Library/Caches, /Volumes/Ramdisk/Links/Library/Logs e
 		/Volumes/Ramdisk/Links/Users/$(whoami)/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/Links/
 		nella posizione di origine (specificate dal flag -f).
+		Il contenuto delle directories verrà eliminato.
 
 	$ ${script_name} -c Ramdisk /Volumes/Ramdisk 1000
 
 		Crea un un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB.
+
+	$ ${script_name} -s Ramdisk /Volumes/Ramdisk 1000 -f "/Library/Caches:/Library/Logs" -f "/System/Library/Caches" -f "/private/tmp"
+
+		Crea un un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB.
+		Sostituisce quindi le directories /Library/Caches, /Library/Logs, /System/Library/Caches, /private/tmp con dei links con origine
+		nel ramdisk appena creato.
+		Il contenuto delle directories verrà eliminato.
 \n
 EOF
 
@@ -516,7 +525,7 @@ function parse_input {
 			-f | --filenames-to-create )
 				shift
 				local IFS=':'
-				links=(${1})
+				links+=(${1})
 	        	shift
 				;;
 
@@ -654,12 +663,25 @@ function on_exit {
 
 # Utilizzare questi flags per creare il file *.plist, lo script in una 
 # posizione di sistema e caricare lo script all'avvio del sistema:
-# ${script_filename}
+# sudo ${script_filename}
 # -t
 # -d
-# -p $(whoami)
-# -f "/Library/Caches:/Library/Logs:/System/Library/Caches:/System/Library/CacheDelete:/private/tmp:/private/var/log:/private/var/tmp:/Users/$(whoami)/Library/Logs:/Users/$(whoami)/Library/Caches:/Users/$(whoami)/.cache"
-# -s Ramdisk /Volumes/Ramdisk 1000
+# -p "${USER}"
+# -s "Ramdisk" "/Volumes/Ramdisk" 1000
+# -f "/Library/Caches:/Library/Logs"
+# -f "/System/Library/Caches:/System/Library/CacheDelete"
+# -f "/private/tmp:/private/var/log:/private/var/tmp"
+# -f "${HOME}/Library/Logs:${HOME}/Library/Caches:${HOME}/.cache"
+# ### Cache Google Chrome ###
+# -f "${HOME}/Library/Application Support/Google/Chrome/Default/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Default/Service Worker/CacheStorage"
+# -f "${HOME}/Library/Application Support/Google/Chrome/Profile 1/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 1/Service Worker/CacheStorage"
+# -f "${HOME}/Library/Application Support/Google/Chrome/Profile 2/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 2/Service Worker/CacheStorage"
+# -f "${HOME}/Library/Application Support/Google/Chrome/Profile 3/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 3/Service Worker/CacheStorage"
+# -f "${HOME}/Library/Application Support/Google/Chrome/Profile 4/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 4/Service Worker/CacheStorage"
+# ### Cache Opera ###
+# -f "${HOME}/Library/Application Support/com.operasoftware.Opera/Application Cache:${HOME}/Library/Application Support/com.operasoftware.Opera/Service Worker/CacheStorage"
+# ### Cache Safari on Mojave ###
+# -f "${HOME}/Library/Safari/LocalStorage:${HOME}/Library/Containers/com.apple.Safari/Data/Library/Caches"
 function main {
 
 	# Controllo dipendenze
