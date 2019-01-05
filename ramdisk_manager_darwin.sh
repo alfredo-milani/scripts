@@ -661,27 +661,22 @@ function on_exit {
 	exit ${1}
 }
 
-# Utilizzare questi flags per creare il file *.plist, lo script in una 
-# posizione di sistema e caricare lo script all'avvio del sistema:
-# sudo ${script_filename}
-# -t
-# -d
-# -p "${USER}"
-# -s "Ramdisk" "/Volumes/Ramdisk" 1000
-# -f "/Library/Caches:/Library/Logs"
-# -f "/System/Library/Caches:/System/Library/CacheDelete"
-# -f "/private/tmp:/private/var/log:/private/var/tmp"
-# -f "${HOME}/Library/Logs:${HOME}/Library/Caches:${HOME}/.cache"
-# ### Cache Google Chrome ###
-# -f "${HOME}/Library/Application Support/Google/Chrome/Default/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Default/Service Worker/CacheStorage"
-# -f "${HOME}/Library/Application Support/Google/Chrome/Profile 1/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 1/Service Worker/CacheStorage"
-# -f "${HOME}/Library/Application Support/Google/Chrome/Profile 2/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 2/Service Worker/CacheStorage"
-# -f "${HOME}/Library/Application Support/Google/Chrome/Profile 3/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 3/Service Worker/CacheStorage"
-# -f "${HOME}/Library/Application Support/Google/Chrome/Profile 4/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 4/Service Worker/CacheStorage"
-# ### Cache Opera ###
-# -f "${HOME}/Library/Application Support/com.operasoftware.Opera/Application Cache:${HOME}/Library/Application Support/com.operasoftware.Opera/Service Worker/CacheStorage"
-# ### Cache Safari on Mojave ###
-# -f "${HOME}/Library/Safari/LocalStorage:${HOME}/Library/Containers/com.apple.Safari/Data/Library/Caches"
+<<COMM
+Utilizzare questi flags per creare il file *.plist, lo script in una 
+posizione di sistema e caricare lo script all'avvio del sistema:
+sudo ${script_filename} -t -d -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 \
+-f "/Library/Caches:/Library/Logs" \
+-f "/System/Library/Caches:/System/Library/CacheDelete" \
+-f "/private/tmp:/private/var/log:/private/var/tmp" \
+-f "${HOME}/Library/Logs:${HOME}/Library/Caches:${HOME}/.cache" \
+-f "${HOME}/Library/Application Support/Google/Chrome/Default/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Default/Service Worker/CacheStorage" \
+-f "${HOME}/Library/Application Support/Google/Chrome/Profile 1/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 1/Service Worker/CacheStorage" \
+-f "${HOME}/Library/Application Support/Google/Chrome/Profile 2/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 2/Service Worker/CacheStorage" \
+-f "${HOME}/Library/Application Support/Google/Chrome/Profile 3/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 3/Service Worker/CacheStorage" \
+-f "${HOME}/Library/Application Support/Google/Chrome/Profile 4/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 4/Service Worker/CacheStorage" \
+-f "${HOME}/Library/Application Support/com.operasoftware.Opera/Application Cache:${HOME}/Library/Application Support/com.operasoftware.Opera/Service Worker/CacheStorage" \
+-f "${HOME}/Library/Containers/com.apple.Safari/Data/Library/Caches"
+COMM
 function main {
 
 	# Controllo dipendenze
