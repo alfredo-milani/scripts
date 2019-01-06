@@ -223,7 +223,7 @@ function create_and_launch_plist {
 				fi
 				if [[ "${#links[@]}" -gt 0 ]]; then
 					local IFS=':'
-					printf '\t\t\t<string>%s</string>\n' '--filenames-to-create'
+					printf '\t\t\t<string>%s</string>\n' '--create-links-from'
 					printf '\t\t\t<string>%s</string>\n' "${links[*]}"
 				fi
 			)
@@ -243,7 +243,7 @@ EOF
 # ${1} -> hierarchy
 # ${2} -> key
 # ${3} -> file
-# links -> variabile globale di tipo array
+# _links -> variabile globale di tipo array
 function get_links {
 	local i=1
 	local found=false
@@ -252,7 +252,7 @@ function get_links {
 		tmp="$(xmllint --xpath "${1}[${i}]/text()" "${3}")";
 		if [[ "${found}" == true ]]; then
 			local IFS=':'
-			links=(${tmp})
+			_links=(${tmp})
 			break
 		elif [[ "${tmp}" == "${2}" ]]; then
 			found=true
@@ -273,7 +273,7 @@ function unload_links {
 		return ${EXIT_FAILURE}
 	fi
 
-	get_links '/plist/dict/array/string' '--filenames-to-create' "${plist_file}"
+	get_links '/plist/dict/array/string' '--create-links-from' "${plist_file}"
 	for link in "${links[@]}"; do
 		if [[ -L "${link}" ]]; then
 			rm -rf "${link}"
@@ -361,36 +361,45 @@ function create_ramdisk {
 }
 
 function check_links_health {
-	msg 'NC' 'Controllo stato dei links simbolici'
-
 	local plist_file="${launch_daemons_sys_path}/${daemon_name}.plist"
 	if ! [[ -f "${plist_file}" ]]; then
 		msg 'Y' "Il file ${plist_file} non esiste quindi non è possibile controllare lo stato dei links."
 		return ${EXIT_FAILURE}
 	fi
 
-	get_links '/plist/dict/array/string' '--filenames-to-create' "${plist_file}"
+	get_links '/plist/dict/array/string' '--create-links-from' "${plist_file}"
+
+	local links_health
+	read -r -d '' links_health << EOF
+${BD}${U}#${NC}:${BD}${U}Source${NC}:${BD}${U}Status source${NC}:${BD}${U}Link${NC}:${BD}${U}Status link${NC}
+$(
 	local i=0
-	for link in "${links[@]}"; do
-		i=$((++i))
-		cat <<EOF
-${i}. ${link}:
-	- is link: $([[ -L "${link}" ]] && msg 'G' 'True' || msg 'R' 'False')
-	- link is broken: $([[ -e "${link}" ]] && msg 'G' 'False' || msg 'R' 'True')
-	- source: $(
-		local realpath="$(readlink "${link}")"
-		if [[ -n "${realpath}" ]]; then
-			if [[ -e "${realpath}" ]]; then
-				msg 'G' "${realpath}"
-			else
-				printf "${NC}${realpath}${NC} ${R}(not existing)${NC}\n"
-			fi
-		else
-			msg 'R' '--/--'
+	for link in "${_links[@]}"; do
+		local source_path="$(readlink "${link}")"
+		if ! [[ -n "${source_path}" ]]; then
+			source_path="${R}--/--${NC}"
 		fi
-	)
-EOF
+
+		local source_status
+		if [[ -e "${source_path}" ]]; then
+			source_status="${G}Good${NC}"
+		else
+			source_status="${R}Not existing${NC}"
+		fi
+
+		local link_status
+		if [[ -e "${link}" && -L "${link}" ]]; then
+			link_status="${G}Good${NC}"
+		else
+			link_status="${R}Broken${NC}"
+		fi
+
+		i=$((++i))
+		printf "${BD}${U}${i}${NC}:${source_path}:${source_status}:${link}:${link_status}\n"
 	done
+)
+EOF
+	printf "${links_health}\n" | column -t -s ':'
 
 	return ${EXIT_SUCCESS}
 }
@@ -431,7 +440,7 @@ ${BD}### Options${NC}
 	-d | --create-link-to-Download
 		Crea un link nella direcotry download che punta al punto di mount del ramdisk creato.
 
-	-f ${U}file_list${NC} | --filenames-to-create ${U}file_list${NC}
+	-f ${U}file_list${NC} | --create-links-from ${U}file_list${NC}
 		Una volta creato il ramdisk elimina le directories specificate e crea un link
 		simbolico delle stesse all'interno del ramdisk.
 		Il contenuto delle directories verrà eliminato.
@@ -470,16 +479,16 @@ ${BD}### Options${NC}
 
 ${BD}### Esempio di utilizzo${NC}
 
-	$ sudo ${script_name} -t -d -p $(whoami) -f "/Library/Caches:/Library/Logs:/Users/$(whoami)/Library/Caches" -s Ramdisk /Volumes/Ramdisk 1000
+	$ sudo ${script_name} -t -d -p ${USER} -f "/Library/Caches:/Library/Logs:/Users/${USER}/Library/Caches" -s Ramdisk /Volumes/Ramdisk 1000
 
 		Crea un file *.plist nella directory ${launch_daemons_sys_path} e copia questo script nella posizione ${scripts_sys_path}.
 		Così facendo verrà creato un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB, inoltre verrà
-		creato un link simbolico del punto di mount nella directory /Users/$(whoami)/Download/ e verrà creato una directory di nome "Trash"
+		creato un link simbolico del punto di mount nella directory /Users/${USER}/Download/ e verrà creato una directory di nome "Trash"
 		all'interno del Ramdisk.
-		Le directories /Library/Caches, /Library/Logs e /Users/$(whoami)/Library/Caches saranno sostituite con dei link simbolici che puntano a
+		Le directories /Library/Caches, /Library/Logs e /Users/${USER}/Library/Caches saranno sostituite con dei link simbolici che puntano a
 		directories all'interno del ramdisk, quindi in questo caso saranno eliminate le directories /Library/Caches, /Library/Logs e
-		/Users/$(whoami)/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/Links/Library/Caches, /Volumes/Ramdisk/Links/Library/Logs e
-		/Volumes/Ramdisk/Links/Users/$(whoami)/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/Links/
+		/Users/${USER}/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/Links/Library/Caches, /Volumes/Ramdisk/Links/Library/Logs e
+		/Volumes/Ramdisk/Links/Users/${USER}/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/Links/
 		nella posizione di origine (specificate dal flag -f).
 		Il contenuto delle directories verrà eliminato.
 
@@ -522,7 +531,7 @@ function parse_input {
 				shift
 				;;
 
-			-f | --filenames-to-create )
+			-f | --create-links-from )
 				shift
 				local IFS=':'
 				links+=(${1})
@@ -684,7 +693,7 @@ function main {
 		# Controllo se il sistema operativo è MacOSX
 		check_os || return ${?}
 		# Controllo tools non builtin
-		check_tools open read touch basename mv rm ln xmllint \
+		check_tools open read touch basename mv rm ln xmllint column \
 		cp tee hdiutil diskutil newfs_apfs mkdir readlink || return ${?}
 	fi
 
@@ -703,11 +712,6 @@ function main {
 	if [[ "${unload_service_op}" == true ]]; then
 		check_root || return ${?}
 		unload_service || return ${?}
-	fi
-
-	# Verifica salute links simbolici
-	if [[ "${link_health_op}" == true ]]; then
-		check_links_health || return ${?}
 	fi
 
 	# Creazione ramdisk
@@ -733,6 +737,11 @@ function main {
 	elif [[ "${setup_ramdisk_op}" == true ]]; then
 		check_root || return ${?}
 		setup_ramdisk || return ${?}
+	fi
+
+	# Verifica salute links simbolici
+	if [[ "${link_health_op}" == true ]]; then
+		check_links_health || return ${?}
 	fi
 
 	return ${EXIT_SUCCESS}
