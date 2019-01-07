@@ -212,21 +212,21 @@ function create_and_launch_plist {
 			<string>${ramdisk_size}</string>
 			<string>--yes</string>
 			<string>--jump-deps-check</string>
-			$(
-				if [[ "${create_link_Download_op}" == true ]]; then
-					printf '\t\t\t<string>%s</string>\n' '--set-user-profile'
-					printf '\t\t\t<string>%s</string>\n' "${username}"
-					printf '\t\t\t<string>%s</string>\n' '--create-link-in-Download'
-				fi
-				if [[ "${create_trash_op}" == true ]]; then
-					printf '\t\t\t<string>%s</string>\n' '--create-trash'
-				fi
-				if [[ "${#links[@]}" -gt 0 ]]; then
-					local IFS=':'
-					printf '\t\t\t<string>%s</string>\n' '--create-links-from'
-					printf '\t\t\t<string>%s</string>\n' "${links[*]}"
-				fi
-			)
+$(
+	if [[ "${create_link_Download_op}" == true ]]; then
+		printf '\t\t\t<string>%s</string>\n' '--set-user-profile'
+		printf '\t\t\t<string>%s</string>\n' "${username}"
+		printf '\t\t\t<string>%s</string>\n' '--create-link-in-Download'
+	fi
+	if [[ "${create_trash_op}" == true ]]; then
+		printf '\t\t\t<string>%s</string>\n' '--create-trash'
+	fi
+	if [[ "${#links[@]}" -gt 0 ]]; then
+		local IFS=':'
+		printf '\t\t\t<string>%s</string>\n' '--create-links-from'
+		printf '\t\t\t<string>%s</string>\n' "${links[*]}"
+	fi
+)
 		</array>
 	</dict>
 </plist>
