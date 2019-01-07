@@ -184,16 +184,16 @@ function create_and_launch_plist {
 <plist version="1.0">
 	<dict>
 		<key>UserName</key>
-	    <string>root</string>
-	    <key>GroupName</key>
-	    <string>wheel</string>
-	    <key>InitGroups</key>
-	    <true/>
+		<string>root</string>
+		<key>GroupName</key>
+		<string>wheel</string>
+		<key>InitGroups</key>
+		<true/>
 
-	    <key>RunAtLoad</key>
-	    <true/>
-	    <key>KeepAlive</key>
-	    <false/>
+		<key>RunAtLoad</key>
+		<true/>
+		<key>KeepAlive</key>
+		<false/>
 		<key>LaunchOnlyOnce</key>
 		<true/>
 
@@ -206,7 +206,7 @@ function create_and_launch_plist {
 		<key>ProgramArguments</key>
 		<array>
 			<string>${scripts_sys_path}/${script_name}</string>
-			<string>--create-ramdisk</string>			
+			<string>--create-ramdisk</string>
 			<string>${ramdisk_name}</string>
 			<string>${ramdisk_mount_point}</string>
 			<string>${ramdisk_size}</string>
