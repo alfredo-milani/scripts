@@ -692,8 +692,7 @@ sudo ${script_filename} -t -d -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 
 -f "${HOME}/Library/Application Support/Google/Chrome/Profile 2/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 2/Service Worker/CacheStorage" \
 -f "${HOME}/Library/Application Support/Google/Chrome/Profile 3/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 3/Service Worker/CacheStorage" \
 -f "${HOME}/Library/Application Support/Google/Chrome/Profile 4/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 4/Service Worker/CacheStorage" \
--f "${HOME}/Library/Application Support/com.operasoftware.Opera/Application Cache:${HOME}/Library/Application Support/com.operasoftware.Opera/Service Worker/CacheStorage" \
--f "${HOME}/Library/Containers/com.apple.Safari/Data/Library/Caches"
+-f "${HOME}/Library/Application Support/com.operasoftware.Opera/Application Cache:${HOME}/Library/Application Support/com.operasoftware.Opera/Service Worker/CacheStorage"
 COMM
 function main {
 

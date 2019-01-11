@@ -69,7 +69,7 @@ function check_tools {
 
 	while [[ ${#} -gt 0 ]]; do
 		command -v "${1}" &> ${DEV_NULL}
-		if [[ ${?} != 0 ]]; then
+		if [[ ${?} -ne 0 ]]; then
 			msg 'R' "Il tool \"${1}\", necessario per l'esecuzione di questo script, non è presente nel sistema.\nInstallarlo per poter continuare."
 			tools_missing=true
 		fi
@@ -287,7 +287,7 @@ function sync_operation {
 	fi
 
 	execute_rsync "${1}" "${2}"
-	if [[ ${?} == ${EXIT_SUCCESS} ]]; then
+	if [[ ${?} -eq ${EXIT_SUCCESS} ]]; then
 		msg 'G' "La sincronizzazione ha avuto esito positivo"
 	else
 		msg 'R' "Qualcosa è andato storto durante la sincronizzazione"
@@ -332,7 +332,7 @@ function archive {
 		rc=${?}
 	fi
 	
-	if [[ ${rc} == ${EXIT_SUCCESS} ]]; then
+	if [[ ${rc} -eq ${EXIT_SUCCESS} ]]; then
 		msg 'G' "L'archivizione ha avuto esito positivo"
 	else
 		msg 'R' "Qualcosa è andato storto durante l'archiviazione"
