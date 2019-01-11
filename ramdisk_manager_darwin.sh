@@ -114,8 +114,8 @@ function check_os {
 }
 
 function check_root {
-	local current_user=$(id -u)
-	local root_user=0
+	local -i current_user=$(id -u)
+	local -i root_user=0
 
     if [[ ${current_user} -ne ${root_user} ]]; then
     	msg 'R' "Questo tool deve essere lanciato con privilegi di amministratore"
@@ -245,7 +245,7 @@ EOF
 # ${3} -> file
 # _links -> variabile globale di tipo array
 function get_links {
-	local i=1
+	local -i i=1
 	local found=false
 	local tmp
 	while : ; do
@@ -361,6 +361,8 @@ function create_ramdisk {
 }
 
 function check_links_health {
+	msg 'BD' "Controllo salute links per l'utente \"${username}\""
+
 	local plist_file="${launch_daemons_sys_path}/${daemon_name}.plist"
 	if ! [[ -f "${plist_file}" ]]; then
 		msg 'Y' "Il file ${plist_file} non esiste quindi non è possibile controllare lo stato dei links."
@@ -373,7 +375,7 @@ function check_links_health {
 	read -r -d '' links_health << EOF
 ${BD}${U}#${NC}:${BD}${U}Source${NC}:${BD}${U}Status source${NC}:${BD}${U}Link${NC}:${BD}${U}Status link${NC}
 $(
-	local i=0
+	local -i i=0
 	for link in "${_links[@]}"; do
 		local source_path="$(readlink "${link}")"
 		if ! [[ -n "${source_path}" ]]; then
@@ -629,7 +631,7 @@ function validate_input {
 
 	# Necessario specificare lo username per risolvere correttamente i paths
 	if [[ "${create_link_Download_op}" == true || "${setup_ramdisk_op}" == true || 
-		"${unload_service_op}" == true || "${link_health_op}" == true ]] && [[ -z "${username}" ]]; then		
+		"${unload_service_op}" == true ]] && [[ -z "${username}" ]]; then		
 		msg 'R' "ERRORE: Il campo username NON può essere vuoto.\nUtilizzare il flag -p username."
 		return ${EXIT_FAILURE}
 	fi
@@ -643,6 +645,13 @@ function lazy_init_tool_vars {
 }
 
 function lazy_init_vars {
+	# Dopo aver validato l'input, se non è stato specificato
+	# alcun utente con il flag -p, assumo che l'${username}
+	# sia l'utente chiamante
+	if [[ -z "${username}" ]]; then
+		username="$(whoami)"
+	fi
+
 	download_path="$(printf "${download_path}" "${username}")"
 	daemon_name="$(printf "${daemon_name}" "${username}")"
 }
@@ -693,7 +702,7 @@ function main {
 		# Controllo se il sistema operativo è MacOSX
 		check_os || return ${?}
 		# Controllo tools non builtin
-		check_tools open read touch basename mv rm ln xmllint column \
+		check_tools open read touch basename mv rm ln xmllint column whoami \
 		cp tee hdiutil diskutil newfs_apfs mkdir readlink || return ${?}
 	fi
 
