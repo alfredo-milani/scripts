@@ -361,8 +361,6 @@ function create_ramdisk {
 }
 
 function check_links_health {
-	msg 'BD' "Controllo salute links per l'utente \"${username}\""
-
 	local plist_file="${launch_daemons_sys_path}/${daemon_name}.plist"
 	if ! [[ -f "${plist_file}" ]]; then
 		msg 'Y' "Il file ${plist_file} non esiste quindi non è possibile controllare lo stato dei links."
@@ -401,7 +399,9 @@ $(
 	done
 )
 EOF
-	printf "${links_health}\n" | column -t -s ':'
+
+	msg 'BD' "Controllo salute links per l'utente \"${username}\"${NC} - ${plist_file}"
+	msg 'NC' "${links_health}" | column -t -s ':'
 
 	return ${EXIT_SUCCESS}
 }
