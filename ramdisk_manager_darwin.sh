@@ -5,7 +5,7 @@
 # Autore: Alfredo Milani (alfredo.milani.94@gmail.com)
 # Data: Gio 20 Set 2018 12:40:51 CEST
 # Licenza: MIT License
-# Versione: 1.8.0
+# Versione: 2.0.0
 # Note: --/--
 # Versione bash: 4.4.19(1)-release
 # ============================================================================
@@ -42,12 +42,15 @@ declare -r scripts_sys_path='/Library/Scripts/UtilityScripts'
 declare -r launch_daemons_sys_path='/System/Library/LaunchDaemons'
 declare download_path='/Users/%s/Downloads'
 declare daemon_name='it.%s.ramdisk.manager'
+declare -r daemon_ext='.plist'
 
 declare username
 declare script_name
 declare script_filename
 
+declare links_dir='.Links'
 declare links=()
+declare retrieved_links_from_plist=()
 declare -i ramdisk_size
 declare ramdisk_name
 declare ramdisk_mount_point
@@ -59,8 +62,10 @@ declare setup_ramdisk_op=false
 declare unload_service_op=false
 declare create_link_Download_op=false
 declare check_deps_op=true
+declare check_csr_op=true
 declare create_trash_op=false
 declare link_health_op=false
+declare rebuild_links_op=false
 
 
 function log {
@@ -113,6 +118,17 @@ function check_os {
 	fi
 }
 
+function get_csr_status {
+	local status="$(csrutil status | awk '{ print $5 }')"
+	local enabled_value="enabled"
+
+	if [[ "${status:0:${#enabled_value}}" == "${enabled_value}" ]]; then
+		return ${EXIT_SUCCESS}
+	else
+		return ${EXIT_FAILURE}
+	fi
+}
+
 function check_root {
 	local -i current_user=$(id -u)
 	local -i root_user=0
@@ -158,13 +174,25 @@ function create_script {
 	chmod +x "${scripts_sys_path}/${script_name}"
 }
 
+# ${@} -> directories da cui rimuove tutti i files
+function rm_all {
+	while [[ ${#} -gt 0 ]]; do
+		if [[ -d "${1}" && -w "${1}" ]]; then
+			rm -rf "${1}/"..?* "${1}/".[!.]* "${1}/"* "${1}/"~* &> "${DEV_NULL}"
+		else
+			echo "Argomento \"${1}\" non valido."
+		fi
+		shift
+	done
+}
+
 function create_and_launch_plist {
 	if ! [[ -d "${launch_daemons_sys_path}" ]]; then
 		msg 'R' "ERRORE: La directory di sistema ${launch_daemons_sys_path} non esiste."
 		return ${EXIT_FAILURE}
 	fi
 
-	local plist_file="${launch_daemons_sys_path}/${daemon_name}.plist"
+	local plist_file="${launch_daemons_sys_path}/${daemon_name}${daemon_ext}"
 
 	# Controllo se il file plist esiste già nella directory di destinazione
 	if [[ -f "${plist_file}" ]]; then
@@ -212,6 +240,7 @@ function create_and_launch_plist {
 			<string>${ramdisk_size}</string>
 			<string>--yes</string>
 			<string>--jump-deps-check</string>
+			<string>--jump-csr-check</string>
 $(
 	if [[ "${create_link_Download_op}" == true ]]; then
 		printf '\t\t\t<string>%s</string>\n' '--set-user-profile'
@@ -243,7 +272,7 @@ EOF
 # ${1} -> hierarchy
 # ${2} -> key
 # ${3} -> file
-# _links -> variabile globale di tipo array
+# ${retrieved_links_from_plist} -> variabile globale di tipo array
 function get_links {
 	local -i i=1
 	local found=false
@@ -252,7 +281,7 @@ function get_links {
 		tmp="$(xmllint --xpath "${1}[${i}]/text()" "${3}")";
 		if [[ "${found}" == true ]]; then
 			local IFS=':'
-			_links=(${tmp})
+			retrieved_links_from_plist=(${tmp})
 			break
 		elif [[ "${tmp}" == "${2}" ]]; then
 			found=true
@@ -264,20 +293,68 @@ function get_links {
 	done
 }
 
-function unload_links {
-	msg 'NC' 'Sostituzione links simbolici con directory'
+# ${1} -> hierarchy
+# ${2} -> key
+# ${3} -> file
+# ${ramdisk_mount_point} -> variabile globale di tipo array
+function get_mount_point {
+	local -i i=1
+	local found=false
+	local tmp
+	while : ; do
+		tmp="$(xmllint --xpath "${1}[${i}]/text()" "${3}")";
+		if [[ "${found}" == true ]]; then
+			local v1="$(xmllint --xpath "${1}[${i}]/text()" "${3}")";
+			i=$((++i))
+			local v2="$(xmllint --xpath "${1}[${i}]/text()" "${3}")";
+			i=$((++i))
+			local v3="$(xmllint --xpath "${1}[${i}]/text()" "${3}")";
+			
+			ramdisk_mount_point="${v2}"
+			break
+		elif [[ "${tmp}" == "${2}" ]]; then
+			found=true
+		elif [[ -z "${tmp}" ]]; then
+			break
+		fi
 
-	local plist_file="${launch_daemons_sys_path}/${daemon_name}.plist"
+		i=$((++i))
+	done
+}
+
+function rebuild_links {
+	msg 'NC' "Rebuilding links"
+
+	local plist_file="${launch_daemons_sys_path}/${daemon_name}${daemon_ext}"
+	if ! [[ -f "${plist_file}" ]]; then
+		msg 'Y' "Il file ${plist_file} non esiste quindi non è possibile eliminare i links creati in precedenza."
+		return ${EXIT_FAILURE}
+	fi
+
+	# Eliminio tutte le cartelle nel ramdisk
+	rm_all "${ramdisk_mount_point}"
+	get_links '/plist/dict/array/string' '--create-links-from' "${plist_file}"
+	get_mount_point '/plist/dict/array/string' '--create-ramdisk' "${plist_file}"
+	create_links "${retrieved_links_from_plist[@]}" || return ${EXIT_FAILURE}
+
+	return ${EXIT_SUCCESS}
+}
+
+function unload_links {
+	msg 'NC' 'Sostituzione links simbolici con directories'
+
+	local plist_file="${launch_daemons_sys_path}/${daemon_name}${daemon_ext}"
 	if ! [[ -f "${plist_file}" ]]; then
 		msg 'Y' "Il file ${plist_file} non esiste quindi non è possibile eliminare i links creati in precedenza."
 		return ${EXIT_FAILURE}
 	fi
 
 	get_links '/plist/dict/array/string' '--create-links-from' "${plist_file}"
-	for link in "${links[@]}"; do
+	for link in "${retrieved_links_from_plist[@]}"; do
 		if [[ -L "${link}" ]]; then
-			rm -rf "${link}"
-			mkdir "${link}"
+			msg 'NC' "\tRimozione link: ${link}"
+			rm -rf "${link}" || return ${EXIT_FAILURE}
+			mkdir "${link}" || return ${EXIT_FAILURE}
 		fi
 	done
 
@@ -288,22 +365,24 @@ function unload_script {
 	msg 'NC' 'Eliminazione script per la gestione del ramdisk.'
 
 	# Eliminazione script
-	rm -f "${scripts_sys_path}/${script_name}"
+	rm -f "${scripts_sys_path}/${script_name}" || return ${EXIT_FAILURE}
 }
 
 function unload_plist {
 	msg 'NC' 'Eliminazione servizio per la gestione ramdisk'
 
 	# Disabilitazione caricamento automatico
-	launchctl unload -w "${launch_daemons_sys_path}/${daemon_name}" &> "${DEV_NULL}" || return ${EXIT_FAILURE}
+	launchctl unload -w "${launch_daemons_sys_path}/${daemon_name}${daemon_ext}" &> "${DEV_NULL}" || return ${EXIT_FAILURE}
 	# Rimozione file *.plist
-	rm -f "${launch_daemons_sys_path}/${daemon_name}"
+	rm -f "${launch_daemons_sys_path}/${daemon_name}${daemon_ext}" || return ${EXIT_FAILURE}
 }
 
 function unload_service {
-	unload_links
-	unload_script
-	unload_plist
+	unload_links || return ${EXIT_FAILURE}
+	unload_script || return ${EXIT_FAILURE}
+	unload_plist || return ${EXIT_FAILURE}
+
+	return ${EXIT_SUCCESS}
 }
 
 function setup_ramdisk {
@@ -361,7 +440,7 @@ function create_ramdisk {
 }
 
 function check_links_health {
-	local plist_file="${launch_daemons_sys_path}/${daemon_name}.plist"
+	local plist_file="${launch_daemons_sys_path}/${daemon_name}${daemon_ext}"
 	if ! [[ -f "${plist_file}" ]]; then
 		msg 'Y' "Il file ${plist_file} non esiste quindi non è possibile controllare lo stato dei links."
 		return ${EXIT_FAILURE}
@@ -374,7 +453,7 @@ function check_links_health {
 ${BD}${U}#${NC}:${BD}${U}Source${NC}:${BD}${U}Status source${NC}:${BD}${U}Link${NC}:${BD}${U}Status link${NC}
 $(
 	local -i i=0
-	for link in "${_links[@]}"; do
+	for link in "${retrieved_links_from_plist[@]}"; do
 		local source_path="$(readlink "${link}")"
 		if [[ -z "${source_path}" ]]; then
 			source_path="${R}--/--${NC}"
@@ -407,17 +486,24 @@ EOF
 }
 
 function create_links {
-	local linkdir='.Links'
-	for file in "${links[@]}"; do
-		# Creo la directory nel ramdisk
-		mkdir -p "${ramdisk_mount_point}/${linkdir}/${file}"
+	# La creazione della directory contenente i links è disaccoppiata dal creazione
+	#  dello stesso in essa per validare il nome della directory scelta
+	if ! [[ -d "${ramdisk_mount_point}/${links_dir}" ]]; then
+		mkdir "${ramdisk_mount_point}/${links_dir}" || return ${EXIT_FAILURE}
+	fi
 
-		# Controllo se il file da sostituire con un link sia già un link e 
-		# in caso negativo elimino la directory e creo il link
-		if ! [[ -e "${file}" && "$(readlink "${file}")" == "${ramdisk_mount_point}/${linkdir}/${file}" ]]; then
-		 	rm -rf "${file}"
-			ln -s "${ramdisk_mount_point}/${linkdir}/${file}" "${file}"
+	while [[ ${#} -gt 0 ]]; do
+		# Creo la directory nel ramdisk
+		mkdir -p "${ramdisk_mount_point}/${links_dir}/${1}" || return ${EXIT_FAILURE}
+
+		# Controllo se ${1} (che rappresenta il file) da sostituire con un link sia già un link e 
+		#  in caso negativo elimino la directory e creo il link
+		if [[ ! -e "${1}" || "$(readlink "${1}")" != "${ramdisk_mount_point}/${links_dir}/${1}" ]]; then
+		 	rm -rf "${1}" || return ${EXIT_FAILURE}
+			ln -s "${ramdisk_mount_point}/${links_dir}/${1}" "${1}" || return ${EXIT_FAILURE}
 		fi
+
+		shift
 	done
 
 	return ${EXIT_SUCCESS}
@@ -450,6 +536,18 @@ ${BD}### Options${NC}
 
 		"/path_uno/directory_uno:/path_due/directory_due/:/path_tre/directory_tre"
 
+	-i | --jump-csr-check
+		Questo tool di default controlla se è attivo il CSR (System Integrity Protection) e in tal caso termina la sua esecuzione.
+		Non in tutte le istanza di esecuzione, il seguente tool, necessita della disabilitazione del CSR, quindi è strettamente legato
+		ai links che dovrà creare. Se, ad esempio, dovrà essere creato un link della directory di sistema "/System/Library/Caches",
+		in questo caso, sarà necessario disabilitare il CSR per poter scrivere su una posizione di sistema.
+
+		Dal momento che non sempre è necessaria la disabilitazione del CSR, è possibile utilizzare il flag -i per permettere a questo tool
+		di operare senza controllare lo stato del CSR.
+
+		Da notare che, una volta che si è impostato lo script in avvio automatico, è possibile riabilitare il CSR perché lo scrit viene
+		eseguito all'avvio come root:wheel.
+
 	-j | --jump-deps-check
 		Disabilitazione controllo dipendenze tools ausiliari.
 
@@ -457,9 +555,17 @@ ${BD}### Options${NC}
 		Legge il file che gestisce il servizio di creazione del ramdisk contenuto nella directory ${launch_daemons_sys_path}
 		e verifica la salute di tutti i links specificiati dal comando --filenames-to-create.
 
+	-n ${U}directory_name${NC} | --links-dir-name ${U}directory_name${NC}
+		Imposta il nome della directory nella quale creare i links simbolici nel ramdisk.
+		Il valore di default è "${links_dir}".
+
 	-p ${U}username${NC} | --set-user-profile ${U}username${NC}
 		Specifica lo username che si vuole utilizzare.
-		Questa opzione è utile per impostare correttamente i path che vengono usati con il flag -d e -s.		
+		Questa opzione è utile per impostare correttamente i path che vengono usati con il flag -d e -s.
+
+	-r | --rebuild-links
+		Ricostruisce i links leggendo il file *.plist associato, quindi è necessario utilizzare il flag -p per specificare 
+		l'username dell'utente per il quale è stato generato il ramdisk.
 
 	-s ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC} | --setup-ramdisk-at-boot ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC}
 		Inizializza i files necessari per la creazione del ramdisk all'avvio del sistema.
@@ -545,8 +651,19 @@ function parse_input {
 				return ${EXIT_HELP_REQUESTED}
 				;;
 
+			-i | --jump-csr-check )
+				check_csr_op=false
+				shift
+				;;
+
 			-l | --link-health )
 				link_health_op=true
+				shift
+				;;
+
+			-n | --links-dir-name )
+				shift
+				links_dir="${1}"
 				shift
 				;;
 
@@ -558,6 +675,11 @@ function parse_input {
 			-p | --set-user-profile )
 				shift
 				username="${1}"
+				shift
+				;;
+
+			-r | --rebuild-links )
+				rebuild_links_op=true
 				shift
 				;;
 
@@ -603,7 +725,13 @@ function validate_input {
 	fi
 
 	if [[ "${unload_service_op}" == true ]] && [[ "${create_ramdisk_op}" == true || "${setup_ramdisk_op}" == true ]]; then
-		msg 'R' "ERRORE: Non è possibile specificare contemporaneamente i flags -c e -u o -s e -u."
+		msg 'R' "ERRORE: Non è possibile specificare contemporaneamente i flags -c e -u, -s e -u."
+		return ${EXIT_FAILURE}
+	fi
+
+	if [[ "${rebuild_links_op}" == true ]] &&
+		[[ "${create_ramdisk_op}" == true || "${setup_ramdisk_op}" == true || "${unload_service_op}" == true ]]; then
+		msg 'R' "ERRORE: Non è possibile specificare il flag -r ed un altro flag."
 		return ${EXIT_FAILURE}
 	fi
 
@@ -682,7 +810,7 @@ function on_exit {
 <<COMM
 Utilizzare questi flags per creare il file *.plist, lo script in una
 posizione di sistema e caricare lo script all'avvio del sistema:
-sudo ${script_filename} -t -d -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 \
+sudo ${script_filename} -i -t -d -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 \
 -f "/Library/Caches:/Library/Logs" \
 -f "/System/Library/Caches:/System/Library/CacheDelete" \
 -f "/private/tmp:/private/var/log:/private/var/tmp" \
@@ -696,15 +824,6 @@ sudo ${script_filename} -t -d -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 
 COMM
 function main {
 
-	# Controllo dipendenze
-	if [[ "${check_deps_op}" == true ]]; then
-		# Controllo se il sistema operativo è MacOSX
-		check_os || return ${?}
-		# Controllo tools non builtin
-		check_tools open read touch basename mv rm ln xmllint column whoami \
-		cp tee hdiutil diskutil newfs_apfs mkdir readlink || return ${?}
-	fi
-
 	# Inizializzazione variabili del tool
 	lazy_init_tool_vars
 
@@ -716,10 +835,32 @@ function main {
 	# Inizializzazione variabili
 	lazy_init_vars
 
+	# Controllo dipendenze
+	if [[ "${check_deps_op}" == true ]]; then
+		# Controllo se il sistema operativo è MacOSX
+		check_os || return ${?}
+		# Controllo tools non builtin
+		check_tools awk basename chmod chown column cp csrutil diskutil hdiutil ln mkdir mv \
+			newfs_apfs open read readlink tee touch rm whoami xmllint || return ${?}
+	fi
+	# Controllo se il System Integrity Protection è attivo
+	if [[ "${check_csr_op}" == true ]]; then
+		if get_csr_status; then
+			msg 'R' 'Impossibile continuare: il CSR è attivo'
+			return ${EXIT_FAILURE}
+		fi
+	fi
+
+
 	# Rimozione script e file *.plist per la creazione automatica del ramdisk ad avvio sistema
 	if [[ "${unload_service_op}" == true ]]; then
 		check_root || return ${?}
 		unload_service || return ${?}
+	fi
+
+	if [[ "${rebuild_links_op}" == true ]]; then
+		check_root || return ${?}
+		rebuild_links || return ${?}
 	fi
 
 	# Creazione ramdisk
@@ -728,7 +869,8 @@ function main {
 
 		# Creazione links all'interno del ramdisk
 		if [[ "${#links[@]}" -gt 0 ]]; then
-			create_links || return ${?}
+			check_root || return ${?}
+			create_links "${links[@]}" || return ${?}
 		fi
 
 		# Creazione directory Trash all'interno del ramdisk
