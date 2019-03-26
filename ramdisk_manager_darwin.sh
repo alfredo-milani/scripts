@@ -117,12 +117,12 @@ function check_root {
 	local -i current_user=$(id -u)
 	local -i root_user=0
 
-    if [[ ${current_user} -ne ${root_user} ]]; then
-    	msg 'R' "Questo tool deve essere lanciato con privilegi di amministratore"
-        return ${EXIT_MISSING_PERMISSION}
-    fi
+	if [[ ${current_user} -ne ${root_user} ]]; then
+		msg 'R' "Questo tool deve essere lanciato con privilegi di amministratore"
+		return ${EXIT_MISSING_PERMISSION}
+	fi
 
-    return ${EXIT_SUCCESS}
+	return ${EXIT_SUCCESS}
 }
 
 function create_script {
@@ -336,28 +336,28 @@ function create_ramdisk {
 		return ${EXIT_HDIUTIL_ERR}
 	fi
 
-    diskutil partitionDisk "${disk}" GPT APFS %noformat% R
-    if [[ ${?} -ne ${EXIT_SUCCESS} ]]; then
+	diskutil partitionDisk "${disk}" GPT APFS %noformat% R
+	if [[ ${?} -ne ${EXIT_SUCCESS} ]]; then
 		msg 'R' "ERRORE: diskutil - partizionamento disco ${disk}"
 		on_create_ramdisk_error "${disk}"
 		return ${EXIT_DISKUTIL_PART_ERR}
 	fi
 
-    newfs_apfs -v "${1}" "${disk}s1"
-    if [[ ${?} -ne ${EXIT_SUCCESS} ]]; then
+	newfs_apfs -v "${1}" "${disk}s1"
+	if [[ ${?} -ne ${EXIT_SUCCESS} ]]; then
 		msg 'R' "ERRORE: newfs_apfs - creazione APFS sul disco ${disk}s1"
 		on_create_ramdisk_error "${disk}"
 		return ${EXIT_NEWFSAPFS_ERR}
 	fi
 
-    diskutil mount -mountPoint "${2}" "${1}"
-    if [[ ${?} -ne ${EXIT_SUCCESS} ]]; then
+	diskutil mount -mountPoint "${2}" "${1}"
+	if [[ ${?} -ne ${EXIT_SUCCESS} ]]; then
 		msg 'R' "ERRORE: diskutil - creazione punto di mount ramdisk"
 		on_create_ramdisk_error "${disk}"
 		return ${EXIT_DISKUTIL_MOUNT_ERR}
 	fi
 
-    return ${EXIT_SUCCESS}
+	return ${EXIT_SUCCESS}
 }
 
 function check_links_health {
@@ -376,10 +376,10 @@ $(
 	local -i i=0
 	for link in "${_links[@]}"; do
 		local source_path="$(readlink "${link}")"
-		if ! [[ -n "${source_path}" ]]; then
+		if [[ -z "${source_path}" ]]; then
 			source_path="${R}--/--${NC}"
 		fi
-
+		
 		local source_status
 		if [[ -e "${source_path}" ]]; then
 			source_status="${G}Good${NC}"
@@ -407,7 +407,7 @@ EOF
 }
 
 function create_links {
-	local linkdir='Links'
+	local linkdir='.Links'
 	for file in "${links[@]}"; do
 		# Creo la directory nel ramdisk
 		mkdir -p "${ramdisk_mount_point}/${linkdir}/${file}"
@@ -489,8 +489,8 @@ ${BD}### Esempio di utilizzo${NC}
 		all'interno del Ramdisk.
 		Le directories /Library/Caches, /Library/Logs e /Users/${USER}/Library/Caches saranno sostituite con dei link simbolici che puntano a
 		directories all'interno del ramdisk, quindi in questo caso saranno eliminate le directories /Library/Caches, /Library/Logs e
-		/Users/${USER}/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/Links/Library/Caches, /Volumes/Ramdisk/Links/Library/Logs e
-		/Volumes/Ramdisk/Links/Users/${USER}/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/Links/
+		/Users/${USER}/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/.Links/Library/Caches, /Volumes/Ramdisk/.Links/Library/Logs e
+		/Volumes/Ramdisk/.Links/Users/${USER}/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/.Links/
 		nella posizione di origine (specificate dal flag -f).
 		Il contenuto delle directories verrà eliminato.
 
@@ -680,7 +680,7 @@ function on_exit {
 }
 
 <<COMM
-Utilizzare questi flags per creare il file *.plist, lo script in una 
+Utilizzare questi flags per creare il file *.plist, lo script in una
 posizione di sistema e caricare lo script all'avvio del sistema:
 sudo ${script_filename} -t -d -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 \
 -f "/Library/Caches:/Library/Logs" \

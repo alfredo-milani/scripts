@@ -360,17 +360,20 @@ $(
 	fi
 
 	if [[ ${#source_dest_backup_restore[@]} -eq 0 ]]; then
-    	msg 'BD' "* Filenames considerati per il $([[ "${restore_from_backup_op}" == true ]] && printf "restore" || printf "backup"): ${NC}${R}${NULL_STR}"
+    	msg 'BD' "* Filenames considerati per il $([[ "${restore_from_backup_op}" == true ]] && printf "RESTORE" || printf "BACKUP"): ${NC}${R}${NULL_STR}"
 		msg 'BD' "#########################"
     	return ${EXIT_MISSING_BACKUP_RESTORE_FILENAMES}
 	else
-		msg 'BD' "* Filenames considerati per il $([[ "${restore_from_backup_op}" == true ]] && printf "restore" || printf "backup"): ${NC}- ${config_file}"
-		msg 'BD' "\t\tSorgente\t\t\tDestinazione"
-		i=1
+		msg 'BD' "* Filenames considerati per il $([[ "${restore_from_backup_op}" == true ]] && printf "RESTORE" || printf "BACKUP"): ${NC}- ${config_file}"
+		local -i i=1
+		local source_dest_string="\t:${BD}Sorgente${NC}:\t\t:${BD}Destinazione${NC}\n"
+		local source_dest_format="${BD}%s.${NC}:%s:->:%s"
 		for k in "${!source_dest_backup_restore[@]}"; do
-			printf "\t${BD}${i}.${NC} ${k} -> ${source_dest_backup_restore["${k}"]}\n"
+			source_dest_string="${source_dest_string}$(printf "\t${source_dest_format}" "${i}" "${k}" "${source_dest_backup_restore["${k}"]}")\n"
 			i=$((++i))
 		done
+
+		msg 'NC' "${source_dest_string}" | column -t -s ':'
 	fi
 )
 ${BD}#########################${NC}
@@ -447,7 +450,7 @@ function on_exit {
 
 function main {
 
-	check_tools rsync printf basename mv cp || return ${EXIT_FAILURE}
+	check_tools rsync printf basename mv cp column || return ${EXIT_FAILURE}
 
 	lazy_init_tool_vars
 

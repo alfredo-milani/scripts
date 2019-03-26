@@ -510,7 +510,7 @@ function check_tools {
 
 
 function main {
-	! check_tools declare sed read printf exit trap cat exit shift mktemp echo gpg cp && return $EXIT_FAILURE
+	! check_tools sed printf cat mktemp gpg cp && return $EXIT_FAILURE
 	(
 		check_tools 7z &> $NULL ||
 		check_tools zip &> $NULL ||
