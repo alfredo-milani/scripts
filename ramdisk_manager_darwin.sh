@@ -810,7 +810,7 @@ function on_exit {
 <<COMM
 Utilizzare questi flags per creare il file *.plist, lo script in una
 posizione di sistema e caricare lo script all'avvio del sistema:
-sudo ${script_filename} -i -t -d -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 \
+sudo ${script_filename} -t -d -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 \
 -f "/Library/Caches:/Library/Logs" \
 -f "/System/Library/Caches:/System/Library/CacheDelete" \
 -f "/private/tmp:/private/var/log:/private/var/tmp" \
