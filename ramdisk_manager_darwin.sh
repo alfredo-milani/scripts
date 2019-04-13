@@ -538,15 +538,15 @@ ${BD}### Options${NC}
 
 	-i | --jump-csr-check
 		Questo tool di default controlla se è attivo il CSR (System Integrity Protection) e in tal caso termina la sua esecuzione.
-		Non in tutte le istanza di esecuzione, il seguente tool, necessita della disabilitazione del CSR, quindi è strettamente legato
-		ai links che dovrà creare. Se, ad esempio, dovrà essere creato un link della directory di sistema "/System/Library/Caches",
-		in questo caso, sarà necessario disabilitare il CSR per poter scrivere su una posizione di sistema.
+		Non in tutte le istanza di esecuzione è necessaria la disabilitazione del CSR.
+		Se, ad esempio, dovrà essere creato un link della directory di sistema "/System/Library/Caches",
+		sarà necessario disabilitare il CSR per completare l'operazione di scrittura.
 
 		Dal momento che non sempre è necessaria la disabilitazione del CSR, è possibile utilizzare il flag -i per permettere a questo tool
 		di operare senza controllare lo stato del CSR.
 
-		Da notare che, una volta che si è impostato lo script in avvio automatico, è possibile riabilitare il CSR perché lo scrit viene
-		eseguito all'avvio come root:wheel.
+		Da notare che una volta che si è impostato lo script in avvio automatico, è possibile riabilitare il CSR perché lo script viene
+		eseguito all'avvio dall'utente root:wheel.
 
 	-j | --jump-deps-check
 		Disabilitazione controllo dipendenze tools ausiliari.
@@ -566,6 +566,7 @@ ${BD}### Options${NC}
 	-r | --rebuild-links
 		Ricostruisce i links leggendo il file *.plist associato, quindi è necessario utilizzare il flag -p per specificare 
 		l'username dell'utente per il quale è stato generato il ramdisk.
+		Nota: il ramdisk non viene rigenerato; saranno solo rigenerati i links.
 
 	-s ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC} | --setup-ramdisk-at-boot ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC}
 		Inizializza i files necessari per la creazione del ramdisk all'avvio del sistema.
@@ -774,8 +775,8 @@ function lazy_init_tool_vars {
 
 function lazy_init_vars {
 	# Dopo aver validato l'input, se non è stato specificato
-	# alcun utente con il flag -p, assumo che l'${username}
-	# sia l'utente chiamante
+	#  alcun utente con il flag -p, assumo che l'${username}
+	#  sia l'utente chiamante
 	if [[ -z "${username}" ]]; then
 		username="$(whoami)"
 	fi
@@ -843,22 +844,31 @@ function main {
 		check_tools awk basename chmod chown column cp csrutil diskutil hdiutil ln mkdir mv \
 			newfs_apfs open read readlink tee touch rm whoami xmllint || return ${?}
 	fi
-	# Controllo se il System Integrity Protection è attivo
-	if [[ "${check_csr_op}" == true ]]; then
-		if get_csr_status; then
-			msg 'R' 'Impossibile continuare: il CSR è attivo'
-			return ${EXIT_FAILURE}
-		fi
-	fi
 
 
 	# Rimozione script e file *.plist per la creazione automatica del ramdisk ad avvio sistema
 	if [[ "${unload_service_op}" == true ]]; then
+		# Controllo se il System Integrity Protection è attivo
+		if [[ "${check_csr_op}" == true ]]; then
+			if get_csr_status; then
+				msg 'R' 'ERRORE: Impossibile fare cleanup: il CSR è attivo'
+				return ${EXIT_FAILURE}
+			fi
+		fi
+
 		check_root || return ${?}
 		unload_service || return ${?}
 	fi
 
 	if [[ "${rebuild_links_op}" == true ]]; then
+		# Controllo se il System Integrity Protection è attivo
+		if [[ "${check_csr_op}" == true ]]; then
+			if get_csr_status; then
+				msg 'R' 'ERRORE: Impossibile ricostruire i links: il CSR è attivo'
+				return ${EXIT_FAILURE}
+			fi
+		fi
+
 		check_root || return ${?}
 		rebuild_links || return ${?}
 	fi
@@ -869,6 +879,14 @@ function main {
 
 		# Creazione links all'interno del ramdisk
 		if [[ "${#links[@]}" -gt 0 ]]; then
+			# Controllo se il System Integrity Protection è attivo
+			if [[ "${check_csr_op}" == true ]]; then
+				if get_csr_status; then
+					msg 'R' 'ERRORE: Impossibile creare i links: il CSR è attivo'
+					return ${EXIT_FAILURE}
+				fi
+			fi
+
 			check_root || return ${?}
 			create_links "${links[@]}" || return ${?}
 		fi
@@ -885,6 +903,14 @@ function main {
 
 	# Setup script e file *.plist per la creazione automatica di un ramdisk ad avvio di sistema
 	elif [[ "${setup_ramdisk_op}" == true ]]; then
+		# Controllo se il System Integrity Protection è attivo
+		if [[ "${check_csr_op}" == true ]]; then
+			if get_csr_status; then
+				msg 'R' "ERRORE: Impossibile imposatare la creazione del ramdisk all'avvio del sistema: il CSR è attivo"
+				return ${EXIT_FAILURE}
+			fi
+		fi
+
 		check_root || return ${?}
 		setup_ramdisk || return ${?}
 	fi
