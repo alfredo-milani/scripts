@@ -358,6 +358,8 @@ function unload_links {
 		fi
 	done
 
+	rmdir "${ramdisk_mount_point}"
+
 	return ${EXIT_SUCCESS}
 }
 
@@ -409,7 +411,7 @@ function on_create_ramdisk_error {
 # ${2} -> ramdisk mount point
 # ${3} -> ramdisk size in MB
 function create_ramdisk {
-	local disk="$(basename $(hdiutil attach -nomount "ram://$((${3} * 1024 * 2))") )"
+	local disk="$(basename $(hdiutil attach "ram://$((${3} * 2 << 10))" -nomount -noverify -nobrowse))"
 	if [[ -z "${disk}" ]]; then
 		msg 'R' "ERRORE: hdiutil - creazione disco per il ramdisk"
 		return ${EXIT_HDIUTIL_ERR}
