@@ -54,6 +54,8 @@ declare retrieved_links_from_plist=()
 declare -i ramdisk_size
 declare ramdisk_name
 declare ramdisk_mount_point
+declare permanent_ramdisk_path
+declare trash_dirname='Trash'
 
 # Azioni possibili
 declare ask=true
@@ -66,6 +68,8 @@ declare check_csr_op=true
 declare create_trash_op=false
 declare link_health_op=false
 declare rebuild_links_op=false
+declare backup_ramdisk_op=false
+declare restore_ramdisk_op=false
 
 
 function log {
@@ -241,6 +245,9 @@ function create_and_launch_plist {
 			<string>--yes</string>
 			<string>--jump-deps-check</string>
 			<string>--jump-csr-check</string>
+			<string>--restore-ramdisk</string>
+			<string>${ramdisk_mount_point}</string>
+			<string>${permanent_ramdisk_path}</string>
 $(
 	if [[ "${create_link_Download_op}" == true ]]; then
 		printf '\t\t\t<string>%s</string>\n' '--set-user-profile'
@@ -511,6 +518,21 @@ function create_links {
 	return ${EXIT_SUCCESS}
 }
 
+function backup_ramdisk {
+	rsync -a --delete --no-links --exclude=".*" "${ramdisk_mount_point}/" "${permanent_ramdisk_path}"
+
+	return ${EXIT_SUCCESS}
+}
+
+function restore_ramdisk {
+	local files=("${permanent_ramdisk_path}"/*)
+	if [[ -d "${permanent_ramdisk_path}" && (( ${#files[*]} )) ]]; then
+		rsync -a --exclude=".*" "${permanent_ramdisk_path}/" "${ramdisk_mount_point}"
+	fi
+
+	return ${EXIT_SUCCESS}
+}
+
 function usage {
 	local usage
 	read -r -d '' usage << EOF
@@ -522,6 +544,9 @@ ${BD}### Utilizzo${NC}
 	automatico all'avvio del sistema.
 
 ${BD}### Options${NC}
+
+	-b ${U}ramdisk_mount_point${NC} ${U}permanent_ramdisk_path${NC} | --backup-ramdisk ${U}ramdisk_mount_point${NC} ${U}permanent_ramdisk_path${NC}
+		Crea un backup del contenuto del ramdisk nella posizione specificata ${U}permanent_ramdisk_path${NC}.
 
 	-c ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC} | --create-ramdisk ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC}
 		Inizializza un ramdisk creando un disco di nome ${U}ramdisk_name${NC} di dimensione ${U}ramdisk_size_MB${NC} che
@@ -570,6 +595,9 @@ ${BD}### Options${NC}
 		l'username dell'utente per il quale è stato generato il ramdisk.
 		Nota: il ramdisk non viene rigenerato; saranno solo rigenerati i links.
 
+	-R ${U}ramdisk_mount_point${NC} ${U}permanent_ramdisk_path${NC} | --restore-ramdisk ${U}ramdisk_mount_point${NC} ${U}permanent_ramdisk_path${NC}
+		Ripristina il contenuto del ramdisk spostando i dati dalla posizione ${U}permanent_ramdisk_path${NC} verso ${U}ramdisk_mount_point${NC}.
+
 	-s ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC} | --setup-ramdisk-at-boot ${U}ramdisk_name${NC} ${U}ramdisk_mount_point${NC} ${U}ramdisk_size_MB${NC}
 		Inizializza i files necessari per la creazione del ramdisk all'avvio del sistema.
 		Il ramdisk verrà inizializzato creando un disco di nome ${U}ramdisk_name${NC} di dimensione ${U}ramdisk_size_MB${NC} che
@@ -590,7 +618,7 @@ ${BD}### Options${NC}
 
 ${BD}### Esempio di utilizzo${NC}
 
-	$ sudo ${script_name} -t -d -p ${USER} -f "/Library/Caches:/Library/Logs:/Users/${USER}/Library/Caches" -s Ramdisk /Volumes/Ramdisk 1000
+	$ sudo ${script_name} -t -d -p ${USER} -f "/Library/Caches:/Library/Logs:/Users/${USER}/Library/Caches" -s Ramdisk /Volumes/Ramdisk 1000 -R /Volumes/Ramdisk "${HOME}/Downloads/tmp/Ramdisk"
 
 		Crea un file *.plist nella directory ${launch_daemons_sys_path} e copia questo script nella posizione ${scripts_sys_path}.
 		Così facendo verrà creato un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB, inoltre verrà
@@ -602,6 +630,7 @@ ${BD}### Esempio di utilizzo${NC}
 		/Volumes/Ramdisk/.Links/Users/${USER}/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/.Links/
 		nella posizione di origine (specificate dal flag -f).
 		Il contenuto delle directories verrà eliminato.
+		In fase di startup del terminale se la cartella "${HOME}/Downloads/tmp/Ramdisk" esiste e è non vuota, il suo contenuto verrà copiato in "/Volumes/Ramdisk".
 
 	$ ${script_name} -c Ramdisk /Volumes/Ramdisk 1000
 
@@ -628,6 +657,14 @@ function parse_input {
 
 	while [[ ${#} -gt 0 ]]; do
 		case "${1}" in
+			-b | --backup-ramdisk )
+				shift
+				ramdisk_mount_point="${1}"
+				permanent_ramdisk_path="${2}"
+				backup_ramdisk_op=true
+				shift 2
+				;;
+
 			-c | --create-ramdisk )
 				shift
 				ramdisk_name="${1}"
@@ -686,12 +723,20 @@ function parse_input {
 				shift
 				;;
 
+			-R | --restore-ramdisk )
+				shift
+				ramdisk_mount_point="${1}"
+				permanent_ramdisk_path="${2}"
+				restore_ramdisk_op=true
+				shift 2
+				;;
+
 			-s | --setup-ramdisk-at-boot )
 				shift
 				ramdisk_name="${1}"
 				ramdisk_mount_point="${2}"
 				ramdisk_size="${3}"
-				setup_ramdisk_op=true;
+				setup_ramdisk_op=true
 				shift 3
 				;;
 
@@ -767,6 +812,16 @@ function validate_input {
 		return ${EXIT_FAILURE}
 	fi
 
+	if [[ "${backup_ramdisk_op}" == true || "${restore_ramdisk_op}" == true ]]; then
+		if [[ ! -d "${permanent_ramdisk_path}" ]]; then
+			msg 'R' "ERRORE: La directory specificata per la persistenza dei dati non esiste."
+			return ${EXIT_FAILURE}
+		elif [[ -z "${ramdisk_mount_point}" ]]; then
+			msg 'R' "ERRORE: Specificare il punto di mount del ramdisk da considerare"
+			return ${EXIT_FAILURE}
+		fi
+	fi
+
 	return ${EXIT_SUCCESS}
 }
 
@@ -793,8 +848,7 @@ function create_link_Download {
 }
 
 function create_trash {
-	local dirname='Trash'
-	mkdir "${ramdisk_mount_point}/${dirname}"
+	mkdir "${ramdisk_mount_point}/${trash_dirname}"
 	return ${EXIT_SUCCESS}
 }
 
@@ -823,7 +877,8 @@ sudo ${script_filename} -t -d -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 
 -f "${HOME}/Library/Application Support/Google/Chrome/Profile 2/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 2/Service Worker/CacheStorage" \
 -f "${HOME}/Library/Application Support/Google/Chrome/Profile 3/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 3/Service Worker/CacheStorage" \
 -f "${HOME}/Library/Application Support/Google/Chrome/Profile 4/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 4/Service Worker/CacheStorage" \
--f "${HOME}/Library/Application Support/com.operasoftware.Opera/Application Cache:${HOME}/Library/Application Support/com.operasoftware.Opera/Service Worker/CacheStorage"
+-f "${HOME}/Library/Application Support/com.operasoftware.Opera/Application Cache:${HOME}/Library/Application Support/com.operasoftware.Opera/Service Worker/CacheStorage" \
+-R "/Volumes/Ramdisk" "${HOME}/Downloads/tmp/Ramdisk"
 COMM
 function main {
 
@@ -844,7 +899,7 @@ function main {
 		check_os || return ${?}
 		# Controllo tools non builtin
 		check_tools awk basename chmod chown column cp csrutil diskutil hdiutil ln mkdir mv \
-			newfs_apfs open read readlink tee touch rm whoami xmllint || return ${?}
+			newfs_apfs open read readlink rsync tee touch rm whoami xmllint || return ${?}
 	fi
 
 
@@ -920,6 +975,15 @@ function main {
 	# Verifica salute links simbolici
 	if [[ "${link_health_op}" == true ]]; then
 		check_links_health || return ${?}
+	fi
+
+	# Backup contenuto ramdisk
+	if [[ "${backup_ramdisk_op}" == true ]]; then
+		backup_ramdisk || return ${?}
+	fi
+	# Restore contenuto permanente
+	if [[ "${restore_ramdisk_op}" == true ]]; then
+		restore_ramdisk || return ${?}
 	fi
 
 	return ${EXIT_SUCCESS}
