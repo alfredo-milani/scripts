@@ -365,8 +365,6 @@ function unload_links {
 		fi
 	done
 
-	rmdir "${ramdisk_mount_point}"
-
 	return ${EXIT_SUCCESS}
 }
 
@@ -386,10 +384,18 @@ function unload_plist {
 	rm -f "${launch_daemons_sys_path}/${daemon_name}${daemon_ext}" || return ${EXIT_FAILURE}
 }
 
+function remove_volume {
+	diskutil umount "${ramdisk_mount_point}" || return ${EXIT_FAILURE}
+	rmdir "${ramdisk_mount_point}" || return ${EXIT_FAILURE}
+
+	return ${EXIT_SUCCESS}
+}
+
 function unload_service {
 	unload_links || return ${EXIT_FAILURE}
 	unload_script || return ${EXIT_FAILURE}
 	unload_plist || return ${EXIT_FAILURE}
+	remove_volume || return ${EXIT_FAILURE}
 
 	return ${EXIT_SUCCESS}
 }
@@ -519,7 +525,7 @@ function create_links {
 }
 
 function backup_ramdisk {
-	rsync -a --delete --no-links --exclude=".*" "${ramdisk_mount_point}/" "${permanent_ramdisk_path}"
+	rsync -a --delete --exclude=".*" "${ramdisk_mount_point}/" "${permanent_ramdisk_path}" || return ${EXIT_FAILURE}
 
 	return ${EXIT_SUCCESS}
 }
@@ -618,20 +624,6 @@ ${BD}### Options${NC}
 
 ${BD}### Esempio di utilizzo${NC}
 
-	$ sudo ${script_name} -t -d -p ${USER} -f "/Library/Caches:/Library/Logs:/Users/${USER}/Library/Caches" -s Ramdisk /Volumes/Ramdisk 1000 -R /Volumes/Ramdisk "${HOME}/Downloads/tmp/Ramdisk"
-
-		Crea un file *.plist nella directory ${launch_daemons_sys_path} e copia questo script nella posizione ${scripts_sys_path}.
-		Così facendo verrà creato un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB, inoltre verrà
-		creato un link simbolico del punto di mount nella directory /Users/${USER}/Download/ e verrà creato una directory di nome "Trash"
-		all'interno del Ramdisk.
-		Le directories /Library/Caches, /Library/Logs e /Users/${USER}/Library/Caches saranno sostituite con dei link simbolici che puntano a
-		directories all'interno del ramdisk, quindi in questo caso saranno eliminate le directories /Library/Caches, /Library/Logs e
-		/Users/${USER}/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/.Links/Library/Caches, /Volumes/Ramdisk/.Links/Library/Logs e
-		/Volumes/Ramdisk/.Links/Users/${USER}/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/.Links/
-		nella posizione di origine (specificate dal flag -f).
-		Il contenuto delle directories verrà eliminato.
-		In fase di startup del terminale se la cartella "${HOME}/Downloads/tmp/Ramdisk" esiste e è non vuota, il suo contenuto verrà copiato in "/Volumes/Ramdisk".
-
 	$ ${script_name} -c Ramdisk /Volumes/Ramdisk 1000
 
 		Crea un un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB.
@@ -642,6 +634,19 @@ ${BD}### Esempio di utilizzo${NC}
 		Sostituisce quindi le directories /Library/Caches, /Library/Logs, /System/Library/Caches, /private/tmp con dei links con origine
 		nel ramdisk appena creato.
 		Il contenuto delle directories verrà eliminato.
+
+	$ sudo ${script_name} -t -d -p ${USER} -f "/Library/Caches:/Library/Logs:/Users/${USER}/Library/Caches" -s Ramdisk /Volumes/Ramdisk 1000 -R /Volumes/Ramdisk "${HOME}/Downloads/tmp/Ramdisk"
+
+		Crea un file *.plist nella directory ${launch_daemons_sys_path} e copia questo script nella posizione ${scripts_sys_path}.
+		Così facendo verrà creato un volume di nome "Ramdisk", con punto di mount in /Volumes/Ramdisk e di dimensione 1000 MB, inoltre verrà
+		creato un link simbolico del punto di mount nella directory /Users/${USER}/Download/ e verrà creato una directory di nome "Trash"
+		all'interno del Ramdisk.
+		Le directories /Library/Caches, /Library/Logs e /Users/${USER}/Library/Caches saranno sostituite con dei link simbolici che puntano a
+		directories all'interno del ramdisk, quindi in questo caso saranno eliminate le directories /Library/Caches, /Library/Logs e
+		/Users/${USER}/Library/Caches, saranno create le direcotries /Volumes/Ramdisk/.Links/Library/Caches, /Volumes/Ramdisk/.Links/Library/Logs e
+		/Volumes/Ramdisk/.Links/Users/${USER}/Library/Caches e sarà creato un link simbolico delle directories contenute in /Volumes/Ramdisk/.Links/
+		nella posizione di origine (specificate dal flag -f). Il contenuto delle directories verrà eliminato.
+		In fase di startup del terminale se la cartella "${HOME}/Downloads/tmp/Ramdisk" esiste e è non vuota, il suo contenuto verrà copiato in "/Volumes/Ramdisk".
 \n
 EOF
 
@@ -867,7 +872,7 @@ function on_exit {
 <<COMM
 Utilizzare questi flags per creare il file *.plist, lo script in una
 posizione di sistema e caricare lo script all'avvio del sistema:
-sudo ${script_filename} -t -d -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 \
+sudo ${script_filename} -t -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 \
 -f "/Library/Caches:/Library/Logs" \
 -f "/System/Library/Caches:/System/Library/CacheDelete" \
 -f "/private/tmp:/private/var/log:/private/var/tmp" \
@@ -878,7 +883,7 @@ sudo ${script_filename} -t -d -p "${USER}" -s "Ramdisk" "/Volumes/Ramdisk" 1000 
 -f "${HOME}/Library/Application Support/Google/Chrome/Profile 3/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 3/Service Worker/CacheStorage" \
 -f "${HOME}/Library/Application Support/Google/Chrome/Profile 4/Application Cache:${HOME}/Library/Application Support/Google/Chrome/Profile 4/Service Worker/CacheStorage" \
 -f "${HOME}/Library/Application Support/com.operasoftware.Opera/Application Cache:${HOME}/Library/Application Support/com.operasoftware.Opera/Service Worker/CacheStorage" \
--R "/Volumes/Ramdisk" "${HOME}/Downloads/tmp/Ramdisk"
+-R "/Volumes/Ramdisk" "${HOME}/Ramdisk"
 COMM
 function main {
 
@@ -902,34 +907,6 @@ function main {
 			newfs_apfs open read readlink rsync tee touch rm whoami xmllint || return ${?}
 	fi
 
-
-	# Rimozione script e file *.plist per la creazione automatica del ramdisk ad avvio sistema
-	if [[ "${unload_service_op}" == true ]]; then
-		# Controllo se il System Integrity Protection è attivo
-		if [[ "${check_csr_op}" == true ]]; then
-			if get_csr_status; then
-				msg 'R' 'ERRORE: Impossibile fare cleanup: il CSR è attivo'
-				return ${EXIT_FAILURE}
-			fi
-		fi
-
-		check_root || return ${?}
-		unload_service || return ${?}
-	fi
-
-	if [[ "${rebuild_links_op}" == true ]]; then
-		# Controllo se il System Integrity Protection è attivo
-		if [[ "${check_csr_op}" == true ]]; then
-			if get_csr_status; then
-				msg 'R' 'ERRORE: Impossibile ricostruire i links: il CSR è attivo'
-				return ${EXIT_FAILURE}
-			fi
-		fi
-
-		check_root || return ${?}
-		rebuild_links || return ${?}
-	fi
-
 	# Creazione ramdisk
 	if [[ "${create_ramdisk_op}" == true ]]; then
 		create_ramdisk "${ramdisk_name}" "${ramdisk_mount_point}" ${ramdisk_size} || return ${?}
@@ -945,7 +922,7 @@ function main {
 			fi
 
 			check_root || return ${?}
-			create_links "${links[@]}" || return ${?}
+			create_links "${links[@]}" || msg 'R' 'Errore durante la creazione dei links nel ramdisk'
 		fi
 
 		# Creazione directory Trash all'interno del ramdisk
@@ -956,6 +933,11 @@ function main {
 		# Creazione link del ramdisk all'interno della directory Download
 		if [[ "${create_link_Download_op}" == true ]]; then
 			create_link_Download || return ${?}
+		fi
+
+		# Restore contenuto permanente ramdisk
+		if [[ "${restore_ramdisk_op}" == true ]]; then
+			restore_ramdisk || return ${?}
 		fi
 
 	# Setup script e file *.plist per la creazione automatica di un ramdisk ad avvio di sistema
@@ -970,20 +952,45 @@ function main {
 
 		check_root || return ${?}
 		setup_ramdisk || return ${?}
+
+	# Backup contenuto ramdisk
+	elif [[ "${backup_ramdisk_op}" == true ]]; then
+		backup_ramdisk || return ${?}
+
+	# Rebuilding links in ramdisk
+	elif [[ "${rebuild_links_op}" == true ]]; then
+		# Controllo se il System Integrity Protection è attivo
+		if [[ "${check_csr_op}" == true ]]; then
+			if get_csr_status; then
+				msg 'R' 'ERRORE: Impossibile ricostruire i links: il CSR è attivo'
+				return ${EXIT_FAILURE}
+			fi
+		fi
+
+		check_root || return ${?}
+		rebuild_links || return ${?}
+
+	# Rimozione script e file *.plist per la creazione automatica del ramdisk ad avvio sistema
+	elif [[ "${unload_service_op}" == true ]]; then
+		# Controllo se il System Integrity Protection è attivo
+		if [[ "${check_csr_op}" == true ]]; then
+			if get_csr_status; then
+				msg 'R' 'ERRORE: Impossibile fare cleanup: il CSR è attivo'
+				return ${EXIT_FAILURE}
+			fi
+		fi
+
+		check_root || return ${?}
+		unload_service || return ${?}
+
+	# Restore contenuto permanente ramdisk
+	elif [[ "${restore_ramdisk_op}" == true ]]; then
+		restore_ramdisk || return ${?}
 	fi
 
 	# Verifica salute links simbolici
 	if [[ "${link_health_op}" == true ]]; then
 		check_links_health || return ${?}
-	fi
-
-	# Backup contenuto ramdisk
-	if [[ "${backup_ramdisk_op}" == true ]]; then
-		backup_ramdisk || return ${?}
-	fi
-	# Restore contenuto permanente
-	if [[ "${restore_ramdisk_op}" == true ]]; then
-		restore_ramdisk || return ${?}
 	fi
 
 	return ${EXIT_SUCCESS}
